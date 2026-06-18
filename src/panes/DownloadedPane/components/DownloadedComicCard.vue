@@ -1,15 +1,19 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Comic, commands } from '../../../bindings.ts'
 import { useStore } from '../../../store.ts'
 import { PhFilePdf, PhFileZip, PhFolderOpen } from '@phosphor-icons/vue'
 import IconButton from '../../../components/IconButton.vue'
+import PdfViewer from '../../../components/PdfViewer.vue'
 import { useIsMobile } from '../../../composables/useIsMobile'
-import { open } from '@tauri-apps/plugin-shell'
 import { useMessage } from 'naive-ui'
 
 const store = useStore()
 const isMobile = useIsMobile()
 const message = useMessage()
+
+const showPdfViewer = ref(false)
+const pdfPath = ref<string | null>(null)
 
 const props = defineProps<{
   comic: Comic
@@ -72,7 +76,8 @@ async function openComicPdf() {
     return
   }
 
-  await open(result.data)
+  pdfPath.value = result.data
+  showPdfViewer.value = true
 }
 </script>
 
@@ -115,4 +120,6 @@ async function openComicPdf() {
       </div>
     </div>
   </div>
+
+  <PdfViewer v-model:show="showPdfViewer" :pdf-path="pdfPath" />
 </template>

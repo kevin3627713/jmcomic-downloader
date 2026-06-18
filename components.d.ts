@@ -42,5 +42,6 @@ declare module 'vue' {
     NTabs: typeof import('naive-ui')['NTabs']
     NTooltip: typeof import('naive-ui')['NTooltip']
     NVirtualList: typeof import('naive-ui')['NVirtualList']
+    PdfViewer: typeof import('./src/components/PdfViewer.vue')['default']
   }
 }

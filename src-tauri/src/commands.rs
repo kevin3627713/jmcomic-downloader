@@ -697,6 +697,15 @@ pub fn get_comic_pdf_path(app: AppHandle, comic: Comic) -> CommandResult<Option<
     }
 }
 
+#[tauri::command(async)]
+#[specta::specta]
+pub fn read_pdf_file(path: String) -> CommandResult<Vec<u8>> {
+    let data = std::fs::read(&path)
+        .context(format!("读取PDF文件`{path}`失败"))
+        .map_err(|err| CommandError::from("读取PDF文件失败", err))?;
+    Ok(data)
+}
+
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command(async)]
 #[specta::specta]

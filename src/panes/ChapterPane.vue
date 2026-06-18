@@ -5,13 +5,16 @@ import { ChapterInfo, commands, DownloadTaskState } from '../bindings.ts'
 import { useStore } from '../store.ts'
 import { PhFolderOpen, PhFilePdf } from '@phosphor-icons/vue'
 import IconButton from '../components/IconButton.vue'
+import PdfViewer from '../components/PdfViewer.vue'
 import { useIsMobile } from '../composables/useIsMobile'
-import { open } from '@tauri-apps/plugin-shell'
 import { useMessage } from 'naive-ui'
 
 const store = useStore()
 const isMobile = useIsMobile()
 const message = useMessage()
+
+const showPdfViewer = ref(false)
+const pdfPath = ref<string | null>(null)
 
 const dropdownX = ref<number>(0)
 const dropdownY = ref<number>(0)
@@ -214,7 +217,8 @@ async function openComicPdf() {
     return
   }
 
-  await open(result.data)
+  pdfPath.value = result.data
+  showPdfViewer.value = true
 }
 
 function isDownloading(state: State) {
@@ -292,6 +296,8 @@ function isDownloading(state: State) {
       :options="dropdownOptions"
       :show="showDropdown"
       :on-clickoutside="() => (showDropdown = false)" />
+
+    <PdfViewer v-model:show="showPdfViewer" :pdf-path="pdfPath" />
   </div>
 </template>
 
