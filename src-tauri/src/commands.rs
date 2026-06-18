@@ -676,6 +676,27 @@ pub fn export_pdf(app: AppHandle, comic: Comic) -> CommandResult<()> {
     Ok(())
 }
 
+#[tauri::command(async)]
+#[specta::specta]
+#[allow(clippy::needless_pass_by_value)]
+pub fn get_comic_pdf_path(app: AppHandle, comic: Comic) -> CommandResult<Option<String>> {
+    let comic_export_dir = comic
+        .get_comic_export_dir(&app)
+        .map_err(|err| CommandError::from("获取漫画导出目录失败", err))?;
+
+    let comic_download_dir_name = comic
+        .get_comic_download_dir_name()
+        .map_err(|err| CommandError::from("获取漫画下载目录名失败", err))?;
+
+    let pdf_path = comic_export_dir.join(format!("{comic_download_dir_name}.pdf"));
+
+    if pdf_path.exists() {
+        Ok(Some(pdf_path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command(async)]
 #[specta::specta]

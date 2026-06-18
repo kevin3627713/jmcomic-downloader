@@ -4,9 +4,12 @@ import { useStore } from '../../../store.ts'
 import { PhFilePdf, PhFileZip, PhFolderOpen } from '@phosphor-icons/vue'
 import IconButton from '../../../components/IconButton.vue'
 import { useIsMobile } from '../../../composables/useIsMobile'
+import { open } from '@tauri-apps/plugin-shell'
+import { useMessage } from 'naive-ui'
 
 const store = useStore()
 const isMobile = useIsMobile()
+const message = useMessage()
 
 const props = defineProps<{
   comic: Comic
@@ -55,6 +58,22 @@ async function showComicDownloadDirInFileManager() {
     console.error(result.error)
   }
 }
+
+async function openComicPdf() {
+  const result = await commands.getComicPdfPath(props.comic)
+  if (result.status === 'error') {
+    console.error(result.error)
+    message.error('获取PDF路径失败')
+    return
+  }
+
+  if (result.data === null) {
+    message.warning('请先导出PDF')
+    return
+  }
+
+  await open(result.data)
+}
 </script>
 
 <template>
@@ -80,6 +99,10 @@ async function showComicDownloadDirInFileManager() {
       <div class="flex mt-auto gap-col-2">
         <IconButton v-if="!isMobile" title="打开下载目录" @click="showComicDownloadDirInFileManager">
           <PhFolderOpen :size="24" />
+        </IconButton>
+
+        <IconButton v-if="isMobile" title="查看PDF" @click="openComicPdf">
+          <PhFilePdf :size="24" />
         </IconButton>
 
         <IconButton class="ml-auto" title="导出cbz" @click="exportCbz">

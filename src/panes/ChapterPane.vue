@@ -3,12 +3,15 @@ import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { computed, nextTick, ref, watch, watchEffect } from 'vue'
 import { ChapterInfo, commands, DownloadTaskState } from '../bindings.ts'
 import { useStore } from '../store.ts'
-import { PhFolderOpen } from '@phosphor-icons/vue'
+import { PhFolderOpen, PhFilePdf } from '@phosphor-icons/vue'
 import IconButton from '../components/IconButton.vue'
 import { useIsMobile } from '../composables/useIsMobile'
+import { open } from '@tauri-apps/plugin-shell'
+import { useMessage } from 'naive-ui'
 
 const store = useStore()
 const isMobile = useIsMobile()
+const message = useMessage()
 
 const dropdownX = ref<number>(0)
 const dropdownY = ref<number>(0)
@@ -194,6 +197,26 @@ async function showComicDownloadDirInFileManager() {
   }
 }
 
+async function openComicPdf() {
+  if (store.pickedComic === undefined) {
+    return
+  }
+
+  const result = await commands.getComicPdfPath(store.pickedComic)
+  if (result.status === 'error') {
+    console.error(result.error)
+    message.error('获取PDF路径失败')
+    return
+  }
+
+  if (result.data === null) {
+    message.warning('请先导出PDF')
+    return
+  }
+
+  await open(result.data)
+}
+
 function isDownloading(state: State) {
   return state === 'Pending' || state === 'Downloading' || state === 'Paused'
 }
@@ -249,6 +272,13 @@ function isDownloading(state: State) {
             title="打开下载目录"
             @click="showComicDownloadDirInFileManager">
             <PhFolderOpen :size="24" />
+          </IconButton>
+          <IconButton
+            v-if="store.pickedComic.isDownloaded && isMobile"
+            class="w-fit"
+            title="查看PDF"
+            @click="openComicPdf">
+            <PhFilePdf :size="24" />
           </IconButton>
         </div>
       </div>
