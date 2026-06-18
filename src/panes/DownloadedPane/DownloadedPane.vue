@@ -9,8 +9,10 @@ import { DropdownOption, NIcon } from 'naive-ui'
 import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { PhChecks, PhCheck, PhX } from '@phosphor-icons/vue'
 import UpdateDownloadedComicsButton from './components/UpdateDownloadedComicsButton.vue'
+import { useIsMobile } from '../../composables/useIsMobile'
 
 const store = useStore()
+const isMobile = useIsMobile()
 
 const selectedIds = ref<Set<number>>(new Set())
 const checkedIds = ref<Set<number>>(new Set())
@@ -237,7 +239,7 @@ function useDropdown() {
       <n-input-group>
         <n-input-group-label size="small">导出目录</n-input-group-label>
         <n-input v-model:value="store.config.exportDir" size="small" readonly @click="selectExportDir" />
-        <n-button class="w-10" size="small" @click="showExportDirInFileManager">
+        <n-button v-if="!isMobile" class="w-10" size="small" @click="showExportDirInFileManager">
           <template #icon>
             <n-icon size="20">
               <PhFolderOpen />

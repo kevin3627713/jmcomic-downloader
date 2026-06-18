@@ -3,8 +3,10 @@ import { Comic, commands } from '../../../bindings.ts'
 import { useStore } from '../../../store.ts'
 import { PhFilePdf, PhFileZip, PhFolderOpen } from '@phosphor-icons/vue'
 import IconButton from '../../../components/IconButton.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
 
 const store = useStore()
+const isMobile = useIsMobile()
 
 const props = defineProps<{
   comic: Comic
@@ -76,7 +78,7 @@ async function showComicDownloadDirInFileManager() {
       </span>
       <span class="text-red">作者：{{ comic.author }}</span>
       <div class="flex mt-auto gap-col-2">
-        <IconButton title="打开下载目录" @click="showComicDownloadDirInFileManager">
+        <IconButton v-if="!isMobile" title="打开下载目录" @click="showComicDownloadDirInFileManager">
           <PhFolderOpen :size="24" />
         </IconButton>
 

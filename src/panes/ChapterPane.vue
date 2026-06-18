@@ -5,8 +5,10 @@ import { ChapterInfo, commands, DownloadTaskState } from '../bindings.ts'
 import { useStore } from '../store.ts'
 import { PhFolderOpen } from '@phosphor-icons/vue'
 import IconButton from '../components/IconButton.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const store = useStore()
+const isMobile = useIsMobile()
 
 const dropdownX = ref<number>(0)
 const dropdownY = ref<number>(0)
@@ -242,7 +244,7 @@ function isDownloading(state: State) {
           <span class="text-red">作者：{{ store.pickedComic.author }}</span>
           <span class="text-gray">标签：{{ store.pickedComic.tags }}</span>
           <IconButton
-            v-if="store.pickedComic.isDownloaded"
+            v-if="store.pickedComic.isDownloaded && !isMobile"
             class="w-fit"
             title="打开下载目录"
             @click="showComicDownloadDirInFileManager">

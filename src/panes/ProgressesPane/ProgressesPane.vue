@@ -9,10 +9,12 @@ import UncompletedProgresses from './components/UncompletedProgresses.vue'
 import CompletedProgresses from './components/CompletedProgresses.vue'
 import { ProgressData } from '../../types.ts'
 import ExportProgresses from './components/ExportProgresses.vue'
+import { useIsMobile } from '../../composables/useIsMobile'
 
 export type ProgressesPaneTabName = 'uncompleted' | 'completed' | 'export'
 
 const store = useStore()
+const isMobile = useIsMobile()
 
 const settingsDialogShowing = ref<boolean>(false)
 
@@ -174,7 +176,7 @@ async function selectDownloadDir() {
       <n-input-group class="">
         <n-input-group-label size="small">下载目录</n-input-group-label>
         <n-input v-model:value="store.config.downloadDir" size="small" readonly @click="selectDownloadDir" />
-        <n-button class="w-10" size="small" @click="showDownloadDirInFileManager">
+        <n-button v-if="!isMobile" class="w-10" size="small" @click="showDownloadDirInFileManager">
           <template #icon>
             <n-icon size="20">
               <PhFolderOpen />
