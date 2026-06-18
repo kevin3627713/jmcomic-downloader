@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Tauri generated files (platform-specific)
+src-tauri/gen/apple/
+src-tauri/gen/android/
+
+# iOS build artifacts
+src-tauri/gen/apple/build/
+*.ipa
+*.xcworkspace
+*.xcuserdata
+DerivedData/
+Pods/

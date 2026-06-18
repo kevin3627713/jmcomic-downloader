@@ -1,0 +1,11 @@
+{
+  "identifier": "mobile",
+  "description": "Capability for mobile (iOS/Android)",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default"
+  ]
+}

@@ -1,0 +1,24 @@
+# iOS 交叉编译配置
+# 在 macOS 上编译 iOS 目标时需要
+
+[target.aarch64-apple-ios]
+# 使用 Xcode 的 clang 作为链接器
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]
+
+[target.aarch64-apple-ios-sim]
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]
+
+[target.x86_64-apple-ios]
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]

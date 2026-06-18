@@ -1,0 +1,124 @@
+name: release-ios
+
+on:
+  workflow_dispatch:
+  push:
+    # tags:
+    #   - "v*"
+
+jobs:
+  # 1. 对齐桌面端，从 tauri.conf.json 提取版本号
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version number
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+  build-ios:
+    needs: get-version
+    env:
+      VERSION: ${{ needs.get-version.outputs.VERSION }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- 1. 环境准备 (完全对齐你的桌面端配置) ---
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 补充 iOS 所需的交叉编译 target
+          targets: aarch64-apple-ios, x86_64-apple-ios, aarch64-apple-ios-sim
+
+      # --- 2. Tauri 无签名构建逻辑 ---
+      - name: Build iOS app without signing
+        # 使用 pnpm 调用 tauri CLI。因缺少证书，导出 IPA 时必报错退出，用 || true 忽略报错。
+        run: |
+          pnpm tauri ios build || {
+            echo "Tauri CLI exited during code signing/exporting. This is expected for unsigned builds."
+          }
+
+      - name: Ensure app is built (Fallback to manual xcodebuild)
+        # 兜底：如果 Tauri 没有成功编译出 .app，则调用底层 Xcode 命令强制无签名构建
+        run: |
+          APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | head -1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "App not found, triggering fallback unsigned build via xcodebuild..."
+            
+            WORKSPACE_FILE=$(find src-tauri/gen/apple -name "*.xcworkspace" | head -1)
+            PROJECT_FILE=$(find src-tauri/gen/apple -name "*.xcodeproj" | head -1)
+            PROJECT_NAME=$(basename "$PROJECT_FILE" .xcodeproj)
+            
+            if [ -n "$WORKSPACE_FILE" ]; then
+              XCODE_TARGET="-workspace $WORKSPACE_FILE"
+            else
+              XCODE_TARGET="-project $PROJECT_FILE"
+            fi
+            
+            xcodebuild build \
+              $XCODE_TARGET \
+              -scheme "${PROJECT_NAME}_iOS" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath src-tauri/gen/apple/build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          else
+            echo "App compiled successfully by Tauri CLI: $APP_PATH"
+          fi
+
+      # --- 3. 提取产物并压包 ---
+      - name: Package IPA (unsigned)
+        run: |
+          # 寻找编译出的 .app 路径
+          APP_PATH=$(find src-tauri/gen/apple -type d -name "*.app" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "*.app" | head -1)
+          fi
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Cannot find compiled .app. Build failed."
+            exit 1
+          fi
+          
+          echo "Found .app at: $APP_PATH"
+          APP_NAME=$(basename "$APP_PATH")
+          
+          # 创建 Payload 并压包
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          
+          # Ad-hoc 伪签名（避免侧载时闪退的关键步骤）
+          if [ -d "Payload/$APP_NAME/Frameworks" ]; then
+            find "Payload/$APP_NAME/Frameworks" -type d -name "*.framework" -exec codesign --force --sign - --preserve-metadata=identifier,entitlements {} \; 2>/dev/null || true
+          fi
+          codesign --force --sign - "Payload/$APP_NAME" 2>/dev/null || true
+          
+          # 压缩为与桌面端风格一致的产物名称
+          zip -q -r jmcomic-downloader_${{ env.VERSION }}_ios_no_sign.ipa Payload
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-assets
+          path: jmcomic-downloader_*_ios_no_sign.ipa
