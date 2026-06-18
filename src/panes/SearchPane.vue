@@ -74,13 +74,14 @@ async function search(keyword: string, page: number, sort: SearchSort) {
   <div class="h-full flex flex-col gap-2">
     <n-input-group class="box-border px-2 pt-2">
       <FloatLabelInput
+        class="min-w-0 flex-1"
         label="关键词(jm号也可以)"
         size="small"
         v-model:value="searchInput"
         clearable
         @keydown.enter="search(searchInput.trim(), 1, sortSelected)" />
       <n-select
-        class="w-45%"
+        class="w-1/3 md:w-45%"
         v-model:value="sortSelected"
         :options="sortOptions"
         :show-checkmark="false"
@@ -90,7 +91,7 @@ async function search(keyword: string, page: number, sort: SearchSort) {
         :loading="searching"
         type="primary"
         size="small"
-        class="w-15%"
+        class="w-10 md:w-15%"
         @click="search(searchInput.trim(), 1, sortSelected)">
         <template #icon>
           <n-icon size="22">

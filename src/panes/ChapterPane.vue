@@ -213,7 +213,7 @@ function isDownloading(state: State) {
       @contextmenu="onContextMenu"
       @move="updateSelectedIds"
       @start="unselectAll">
-      <n-checkbox-group v-model:value="checkedIds" class="grid grid-cols-3 gap-1.5">
+      <n-checkbox-group v-model:value="checkedIds" class="grid grid-cols-2 md:grid-cols-3 gap-1.5">
         <n-checkbox
           v-for="{ chapterId, chapterTitle, isDownloaded, state } in chapterInfos"
           :key="chapterId"
