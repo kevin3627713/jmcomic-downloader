@@ -35,7 +35,7 @@
     ],
     "iOS": {
       "minimumSystemVersion": "14.0",
-      "developmentTeam": ""
+      "developmentTeam": "A1B2C3D4E5"
     },
     "windows": {
       "nsis": {
