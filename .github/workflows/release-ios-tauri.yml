@@ -23,7 +23,7 @@ jobs:
     needs: get-version
     env:
       VERSION: ${{ needs.get-version.outputs.VERSION }}
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
