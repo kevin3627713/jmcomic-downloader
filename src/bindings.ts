@@ -174,14 +174,6 @@ async getComicPdfPath(comic: Comic) : Promise<Result<string | null, CommandError
     else return { status: "error", error: e  as any };
 }
 },
-async readPdfFile(path: string) : Promise<Result<number[], CommandError>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("read_pdf_file", { path }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async getLogsDirSize() : Promise<Result<number, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_logs_dir_size") };

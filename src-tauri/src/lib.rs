@@ -57,7 +57,6 @@ pub fn run() {
             export_cbz,
             export_pdf,
             get_comic_pdf_path,
-            read_pdf_file,
             get_logs_dir_size,
             get_synced_comic,
             get_synced_comic_in_favorite,
