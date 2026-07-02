@@ -5,11 +5,14 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager};
 
-const API_DOMAIN_1: &str = "www.cdnzack.cc";
-const API_DOMAIN_2: &str = "www.cdnhth.cc";
-const API_DOMAIN_3: &str = "www.cdnhth.net";
-const API_DOMAIN_4: &str = "www.cdnbea.net";
-const API_DOMAIN_5: &str = "www.cdn-mspjmapiproxy.xyz";
+// 2025-07: Updated to match working domains from Python (Comic) project
+// Old domains (cdnaspa.club, cdnplaystation6.cc, etc.) are dead - 404
+// New domains fetched from BytePlus domain update server
+const API_DOMAIN_1: &str = "www.cdnhjk.net";
+const API_DOMAIN_2: &str = "www.cdngwc.cc";
+const API_DOMAIN_3: &str = "www.cdngwc.net";
+const API_DOMAIN_4: &str = "www.cdngwc.club";
+const API_DOMAIN_5: &str = "www.cdnutc.me";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

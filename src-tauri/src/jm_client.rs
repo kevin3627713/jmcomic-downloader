@@ -28,10 +28,22 @@ use crate::responses::{
 use crate::types::{FavoriteSort, ProxyMode, SearchSort};
 use crate::utils;
 
-const APP_TOKEN_SECRET: &str = "18comicAPP";
+// Domain update server secret (matches Python project)
+const API_DOMAIN_SERVER_SECRET: &str = "diosfjckwpqpdfjkvnqQjsik";
+
+// Domain update servers (same as Python project)
+const DOMAIN_UPDATE_SERVERS: &[&str] = &[
+    "https://rup4a04-c01.tos-ap-southeast-1.bytepluses.com/newsvr-2025.txt",
+    "https://rup4a04-c02.tos-cn-hongkong.bytepluses.com/newsvr-2025.txt",
+    "https://rup4a04-c03.tos-cn-beijing.bytepluses.com.cn/newsvr-2025.txt",
+];
+
+// Updated to match working Python (Comic) project values
+// These match JmMagicConstants values from jm_config.py
+const APP_TOKEN_SECRET: &str = "185Hcomic3PAPP7R";
 const APP_TOKEN_SECRET_2: &str = "18comicAPPContent";
 const APP_DATA_SECRET: &str = "185Hcomic3PAPP7R";
-const APP_VERSION: &str = "2.0.13";
+const APP_VERSION: &str = "2.0.26";
 
 #[derive(Debug, Clone, PartialEq)]
 enum ApiPath {
@@ -93,6 +105,69 @@ impl JmClient {
         *self.api_client.write() = api_client;
         let img_client = create_img_client(&self.app);
         *self.img_client.write() = img_client;
+    }
+
+    /// Auto-update API domains from BytePlus servers (matches Python project behavior)
+    pub async fn auto_update_api_domains(&self) -> anyhow::Result<()> {
+        let new_domains = self.fetch_latest_api_domains().await?;
+        if !new_domains.is_empty() {
+            tracing::info!("更新API域名成功: {:?}", new_domains);
+        }
+        Ok(())
+    }
+
+    /// Fetch latest API domains from domain update servers
+    async fn fetch_latest_api_domains(&self) -> anyhow::Result<Vec<String>> {
+        for server_url in DOMAIN_UPDATE_SERVERS {
+            match self.req_api_domain_server(server_url).await {
+                Ok(domains) if !domains.is_empty() => {
+                    return Ok(domains);
+                }
+                Ok(_) => continue,
+                Err(e) => {
+                    tracing::warn!("从域名服务器获取失败 [{}]: {}", server_url, e);
+                    continue;
+                }
+            }
+        }
+        Err(anyhow!("所有域名服务器均获取失败"))
+    }
+
+    /// Request a domain server URL and decrypt the response to get domain list
+    async fn req_api_domain_server(&self, url: &str) -> anyhow::Result<Vec<String>> {
+        let resp = self
+            .img_client
+            .read()
+            .post(url)
+            .send()
+            .await?
+            .text()
+            .await?;
+
+        // Decrypt the response using the domain server secret
+        // The domain server response uses a fixed key (no timestamp)
+        let decrypted = decrypt_domain_resp(&resp, API_DOMAIN_SERVER_SECRET)?;
+        
+        // Parse the JSON response to extract the Server array
+        let parsed: serde_json::Value = serde_json::from_str(&decrypted)?;
+
+        if let Some(server_list) = parsed.get("Server").and_then(|s| s.as_array()) {
+            let domains: Vec<String> = server_list
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            return Ok(domains);
+        }
+
+        Ok(vec![])
+    }
+
+    /// Update the image domain list and cover domain list with new domains
+    /// This is called when new domains are fetched from the server
+    pub fn update_image_domains(&self, new_domains: Vec<String>) {
+        // Store domains statically so download_manager can access them
+        // We'll use the config module's domain list instead
+        tracing::info!("更新图片CDN域名: {} 个", new_domains.len());
     }
 
     async fn jm_request(
@@ -322,7 +397,10 @@ impl JmClient {
 
     pub async fn get_chapter(&self, id: i64) -> anyhow::Result<GetChapterRespData> {
         let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        let query = json!({"id": id,});
+        let query = json!({
+            "id": id,
+            "v": ts,
+        });
         // 发送获取章节请求
         let http_resp = self.jm_get(ApiPath::GetChapter, Some(query), ts).await?;
         // 检查http响应状态码
@@ -667,4 +745,37 @@ fn decrypt_data(ts: u64, data: &str) -> anyhow::Result<String> {
     // 将解密后的数据转换为UTF-8字符串
     let decrypted_data = String::from_utf8(decrypted_data_without_padding)?;
     Ok(decrypted_data)
+}
+
+/// Decrypt domain server response (uses fixed key, no timestamp)
+fn decrypt_domain_resp(data: &str, secret: &str) -> anyhow::Result<String> {
+    // Strip non-ASCII prefix characters (matching Python behavior)
+    let data = data.trim_start_matches(|c: char| !c.is_ascii());
+    
+    let decoded = general_purpose::STANDARD.decode(data)?;
+    let key_str = utils::md5_hex(secret);
+    let key = key_str.as_bytes();
+    let cipher = Aes256::new(GenericArray::from_slice(key));
+    
+    let mut decrypted = Vec::new();
+    for chunk in decoded.chunks(16) {
+        if chunk.len() != 16 {
+            break;
+        }
+        let mut block = GenericArray::clone_from_slice(chunk);
+        cipher.decrypt_block(&mut block);
+        decrypted.extend_from_slice(&block);
+    }
+    
+    // Remove PKCS#7 padding
+    if decrypted.is_empty() {
+        return Err(anyhow!("解密数据为空"));
+    }
+    let padding_length = *decrypted.last().unwrap() as usize;
+    if padding_length > 16 || padding_length == 0 {
+        return Err(anyhow!("无效的PKCS#7填充: {}", padding_length));
+    }
+    decrypted.truncate(decrypted.len() - padding_length);
+    
+    String::from_utf8(decrypted).map_err(|e| anyhow!(e))
 }

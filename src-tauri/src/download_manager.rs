@@ -28,6 +28,27 @@ use crate::{utils, DownloadSpeedEvent};
 
 pub const IMAGE_DOMAIN: &str = "cdn-msp2.jmapiproxy2.cc";
 
+// Image CDN domain list matching Python project's DOMAIN_IMAGE_LIST
+// Used for random selection when building image URLs
+pub const IMAGE_DOMAIN_LIST: &[&str] = &[
+    "cdn-msp.jmapiproxy1.cc",
+    "cdn-msp.jmapiproxy2.cc",
+    "cdn-msp2.jmapiproxy2.cc",
+    "cdn-msp3.jmapiproxy2.cc",
+    "cdn-msp.jmapinodeudzn.net",
+    "cdn-msp3.jmapinodeudzn.net",
+];
+
+// Cover image domain list - use dynamic domain from the list instead of hardcoded 18comic.vip
+pub const COVER_IMAGE_DOMAIN_LIST: &[&str] = &[
+    "cdn-msp.jmapiproxy1.cc",
+    "cdn-msp.jmapiproxy2.cc",
+    "cdn-msp2.jmapiproxy2.cc",
+    "cdn-msp3.jmapiproxy2.cc",
+    "cdn-msp.jmapinodeudzn.net",
+    "cdn-msp3.jmapinodeudzn.net",
+];
+
 /// 用于管理下载任务
 ///
 /// 克隆 `DownloadManager` 的开销极小，性能开销几乎可以忽略不计。
@@ -303,12 +324,11 @@ impl DownloadTask {
 
     async fn download_cover(&self) -> anyhow::Result<()> {
         let cover_path = self.comic.get_cover_path().context("获取封面路径失败")?;
-        // if cover_path.exists() {
-        //     return Ok(());
-        // }
 
         let comic_id = self.comic.id;
-        let url = format!("https://cdn-msp3.18comic.vip/media/albums/{comic_id}.jpg");
+        // Use dynamic CDN domain from the list instead of hardcoded 18comic.vip
+        let domain = COVER_IMAGE_DOMAIN_LIST[fastrand::usize(0..COVER_IMAGE_DOMAIN_LIST.len())];
+        let url = format!("https://{domain}/media/albums/{comic_id}_3x4.jpg");
 
         let (img_data, _format) = self
             .app
@@ -426,7 +446,9 @@ impl DownloadTask {
             .filter_map(|filename| {
                 let file_path = Path::new(&filename);
                 let ext = file_path.extension()?.to_str()?.to_lowercase();
-                let url = format!("https://{IMAGE_DOMAIN}/media/photos/{chapter_id}/{filename}");
+                // Use random CDN domain from the list
+                let img_domain = IMAGE_DOMAIN_LIST[fastrand::usize(0..IMAGE_DOMAIN_LIST.len())];
+                let url = format!("https://{img_domain}/media/photos/{chapter_id}/{filename}");
                 if ext == "gif" {
                     return Some((url, 0));
                 } else if ext != "webp" {
