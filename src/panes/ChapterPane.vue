@@ -262,7 +262,7 @@ function isDownloading(state: State) {
     <div v-if="store.pickedComic !== undefined" class="flex p-2 pt-0">
       <img
         class="w-24 mr-4 object-cover"
-        :src="`https://cdn-msp3.18comic.vip/media/albums/${store.pickedComic.id}_3x4.jpg`"
+        :src="`https://${store.currentImageCdnDomain}/media/albums/${store.pickedComic.id}_3x4.jpg`"
         alt=""
         referrerpolicy="no-referrer" />
       <div class="flex flex-col w-full justify-between">

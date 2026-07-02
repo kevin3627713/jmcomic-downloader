@@ -50,7 +50,7 @@ async function showComicDownloadDirInFileManager() {
     <div class="flex">
       <img
         class="w-24 object-cover mr-4 cursor-pointer transition-transform duration-200 hover:scale-106"
-        :src="`https://cdn-msp3.18comic.vip/media/albums/${comicId}_3x4.jpg`"
+        :src="`https://${store.currentImageCdnDomain}/media/albums/${comicId}_3x4.jpg`"
         alt=""
         referrerpolicy="no-referrer"
         @click="pickComic" />

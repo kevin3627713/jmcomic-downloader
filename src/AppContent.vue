@@ -170,7 +170,7 @@ onMounted(() => {
           round
           :size="32"
           :src="store.userProfile.photo"
-          fallback-src="https://cdn-msp.18comic.vip/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
+          fallback-src="https://cdn-msp.jmapiproxy2.cc/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
         <span class="whitespace-nowrap text-ellipsis overflow-hidden" :title="store.userProfile.username">
           {{ store.userProfile.username }}
         </span>
@@ -228,7 +228,7 @@ onMounted(() => {
               round
               :size="32"
               :src="store.userProfile.photo"
-              fallback-src="https://cdn-msp.18comic.vip/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
+          fallback-src="https://cdn-msp.jmapiproxy2.cc/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
             <span class="whitespace-nowrap text-ellipsis overflow-hidden" :title="store.userProfile.username">
               {{ store.userProfile.username }}
             </span>

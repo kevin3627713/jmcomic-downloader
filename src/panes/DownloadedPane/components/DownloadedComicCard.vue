@@ -90,7 +90,7 @@ async function openComicPdf() {
       @click="handleCheckboxClick(comic)" />
     <img
       class="w-24 object-cover mr-4"
-      :src="`https://cdn-msp3.18comic.vip/media/albums/${comic.id}_3x4.jpg`"
+      :src="`https://${store.currentImageCdnDomain}/media/albums/${comic.id}_3x4.jpg`"
       alt=""
       :draggable="false"
       referrerpolicy="no-referrer" />

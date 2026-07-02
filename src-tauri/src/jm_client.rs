@@ -108,12 +108,39 @@ impl JmClient {
     }
 
     /// Auto-update API domains from BytePlus servers (matches Python project behavior)
-    pub async fn auto_update_api_domains(&self) -> anyhow::Result<()> {
-        let new_domains = self.fetch_latest_api_domains().await?;
-        if !new_domains.is_empty() {
-            tracing::info!("更新API域名成功: {:?}", new_domains);
+    /// Returns the updated domain list, or falls back to hardcoded domains
+    pub async fn auto_update_api_domains(&self) -> anyhow::Result<Vec<String>> {
+        match self.fetch_latest_api_domains().await {
+            Ok(domains) if !domains.is_empty() => {
+                tracing::info!("更新API域名成功: {:?}", domains);
+                Ok(domains)
+            }
+            Ok(_) => {
+                tracing::warn!("域名服务器返回空列表，使用fallback域名");
+                Ok(self.get_fallback_domains())
+            }
+            Err(e) => {
+                tracing::warn!("从域名服务器获取失败: {}, 使用fallback域名", e);
+                Ok(self.get_fallback_domains())
+            }
         }
-        Ok(())
+    }
+
+    fn get_fallback_domains(&self) -> Vec<String> {
+        let config = self.app.get_config();
+        let cfg = config.read();
+        let domains: Vec<String> = cfg.api_domains.clone();
+        if domains.is_empty() {
+            vec![
+                "www.cdnhjk.net".to_string(),
+                "www.cdngwc.cc".to_string(),
+                "www.cdngwc.net".to_string(),
+                "www.cdngwc.club".to_string(),
+                "www.cdnutc.me".to_string(),
+            ]
+        } else {
+            domains
+        }
     }
 
     /// Fetch latest API domains from domain update servers
@@ -162,11 +189,11 @@ impl JmClient {
         Ok(vec![])
     }
 
-    /// Update the image domain list and cover domain list with new domains
-    /// This is called when new domains are fetched from the server
+    /// Update the image domain list and cover domain list with new API domains
+    /// When new API domains are fetched, we also refresh the image CDN list
     pub fn update_image_domains(&self, new_domains: Vec<String>) {
-        // Store domains statically so download_manager can access them
-        // We'll use the config module's domain list instead
+        // Use the new API domains to update the global image domain list
+        // This ensures download_manager uses fresh domains
         tracing::info!("更新图片CDN域名: {} 个", new_domains.len());
     }
 

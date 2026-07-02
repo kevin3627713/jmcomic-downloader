@@ -5,14 +5,18 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager};
 
-// 2025-07: Updated to match working domains from Python (Comic) project
-// Old domains (cdnaspa.club, cdnplaystation6.cc, etc.) are dead - 404
-// New domains fetched from BytePlus domain update server
-const API_DOMAIN_1: &str = "www.cdnhjk.net";
-const API_DOMAIN_2: &str = "www.cdngwc.cc";
-const API_DOMAIN_3: &str = "www.cdngwc.net";
-const API_DOMAIN_4: &str = "www.cdngwc.club";
-const API_DOMAIN_5: &str = "www.cdnutc.me";
+// 2025-07: Hardcoded domains as fallback.
+// On startup, JmClient tries to fetch latest domains from BytePlus servers.
+// If fetch succeeds, these hardcoded domains are replaced.
+// If fetch fails (network down, server dead), these fallback domains are used.
+// Note: these domains may become stale over time - the auto-update mechanism handles that.
+const FALLBACK_API_DOMAINS: &[&str] = &[
+    "www.cdnhjk.net",
+    "www.cdngwc.cc",
+    "www.cdngwc.net",
+    "www.cdngwc.club",
+    "www.cdnutc.me",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +40,13 @@ pub struct Config {
     pub api_domain_mode: ApiDomainMode,
     pub custom_api_domain: String,
     pub should_download_cover: bool,
+    /// Runtime-updated API domain list (set by auto-update on startup)
+    #[serde(skip, default = "default_api_domains")]
+    pub api_domains: Vec<String>,
+}
+
+fn default_api_domains() -> Vec<String> {
+    FALLBACK_API_DOMAINS.iter().map(|s| s.to_string()).collect()
 }
 
 impl Config {
@@ -62,18 +73,28 @@ impl Config {
     pub fn save(&self, app: &AppHandle) -> anyhow::Result<()> {
         let resource_dir = app.path().app_data_dir()?;
         let config_path = resource_dir.join("config.json");
-        let config_string = serde_json::to_string_pretty(self)?;
+        // Don't save runtime-updated api_domains to config file
+        let mut saveable = self.clone();
+        saveable.api_domains = FALLBACK_API_DOMAINS.iter().map(|s| s.to_string()).collect();
+        let config_string = serde_json::to_string_pretty(&saveable)?;
         std::fs::write(config_path, config_string)?;
         Ok(())
     }
 
     pub fn get_api_domain(&self) -> String {
+        // Use runtime-updated domains if available, otherwise fall back to hardcoded list
+        let domains: &Vec<String> = if !self.api_domains.is_empty() {
+            &self.api_domains
+        } else {
+            return FALLBACK_API_DOMAINS[1].to_string();
+        };
+        
         match self.api_domain_mode {
-            ApiDomainMode::Domain1 => API_DOMAIN_1.to_string(),
-            ApiDomainMode::Domain2 => API_DOMAIN_2.to_string(),
-            ApiDomainMode::Domain3 => API_DOMAIN_3.to_string(),
-            ApiDomainMode::Domain4 => API_DOMAIN_4.to_string(),
-            ApiDomainMode::Domain5 => API_DOMAIN_5.to_string(),
+            ApiDomainMode::Domain1 => domains.first().cloned().unwrap_or_default(),
+            ApiDomainMode::Domain2 => domains.get(1).cloned().unwrap_or_else(|| domains.first().cloned().unwrap_or_default()),
+            ApiDomainMode::Domain3 => domains.get(2).cloned().unwrap_or_else(|| domains.first().cloned().unwrap_or_default()),
+            ApiDomainMode::Domain4 => domains.get(3).cloned().unwrap_or_else(|| domains.first().cloned().unwrap_or_default()),
+            ApiDomainMode::Domain5 => domains.get(4).cloned().unwrap_or_else(|| domains.first().cloned().unwrap_or_default()),
             ApiDomainMode::Custom => self.custom_api_domain.clone(),
         }
     }
@@ -119,8 +140,9 @@ impl Config {
             download_all_favorites_interval_sec: 0,
             update_downloaded_comics_interval_sec: 0,
             api_domain_mode: ApiDomainMode::Domain2,
-            custom_api_domain: API_DOMAIN_2.to_string(),
+            custom_api_domain: FALLBACK_API_DOMAINS[1].to_string(),
             should_download_cover: true,
+            api_domains: default_api_domains(),
         }
     }
 }

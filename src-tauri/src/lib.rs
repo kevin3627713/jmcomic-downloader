@@ -108,6 +108,23 @@ pub fn run() {
             let jm_client = JmClient::new(app.handle().clone());
             app.manage(jm_client);
 
+            // Auto-update API domains on startup (non-blocking, background task)
+            let app_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let client = app_clone.state::<JmClient>();
+                match client.auto_update_api_domains().await {
+                    Ok(domains) => {
+                        let config = app_clone.state::<RwLock<Config>>();
+                        let mut cfg = config.write();
+                        cfg.api_domains = domains.clone();
+                        tracing::info!("启动时自动更新API域名成功: {:?}", domains);
+                    }
+                    Err(e) => {
+                        tracing::warn!("启动时自动更新API域名失败，使用硬编码fallback域名: {}", e);
+                    }
+                }
+            });
+
             let download_manager = DownloadManager::new(app.handle().clone());
             app.manage(download_manager);
 

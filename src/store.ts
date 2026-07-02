@@ -14,6 +14,15 @@ export const useStore = defineStore('store', () => {
   const searchResult = ref<SearchResult>()
   const progressesPaneTabName = ref<ProgressesPaneTabName>('uncompleted')
   const getWeeklyResult = ref<GetWeeklyResult>()
+  const imageCdnDomains = ref<string[]>([
+    'cdn-msp.jmapiproxy1.cc',
+    'cdn-msp.jmapiproxy2.cc',
+    'cdn-msp2.jmapiproxy2.cc',
+    'cdn-msp3.jmapiproxy2.cc',
+    'cdn-msp.jmapinodeudzn.net',
+    'cdn-msp3.jmapinodeudzn.net',
+  ])
+  const currentImageCdnDomain = ref('cdn-msp.jmapiproxy2.cc')
 
   return {
     config,
@@ -25,5 +34,7 @@ export const useStore = defineStore('store', () => {
     searchResult,
     progressesPaneTabName,
     getWeeklyResult,
+    imageCdnDomains,
+    currentImageCdnDomain,
   }
 })
