@@ -62,12 +62,12 @@ async function getWeekly() {
       size="small" />
     <n-tabs class="h-full overflow-auto mb-2" v-model:value="currentWeeklyTypeId" type="line" size="small">
       <n-tab-pane
-        class="h-full overflow-auto"
+        class="h-full overflow-auto flex flex-col"
         v-for="weeklyType in weeklyInfo.type"
         :key="weeklyType.id"
         :name="weeklyType.id"
         :tab="weeklyType.title">
-        <div v-if="store.getWeeklyResult !== undefined" class="flex flex-col gap-row-2 overflow-auto box-border px-2">
+        <div v-if="store.getWeeklyResult !== undefined" class="flex flex-col gap-row-2 overflow-auto box-border px-2 flex-1 min-h-0">
           <ComicCard
             v-for="comicInWeekly in store.getWeeklyResult.list"
             :key="comicInWeekly.id"

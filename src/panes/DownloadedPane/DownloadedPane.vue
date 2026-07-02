@@ -258,7 +258,7 @@ function useDropdown() {
       <n-button type="primary" size="small" @click="exportPdf">导出pdf</n-button>
     </div>
     <SelectionArea
-      class="flex flex-col overflow-auto box-border px-2 selection-container mb-2"
+      class="flex flex-col overflow-auto box-border px-2 selection-container mb-2 flex-1 min-h-0"
       ref="selectionAreaRef"
       :options="{ selectables: '.selectable', features: { deselectOnBlur: true } }"
       @contextmenu="showDropdown"

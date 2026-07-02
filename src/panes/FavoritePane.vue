@@ -104,7 +104,7 @@ async function syncFavoriteFolder() {
       <n-button size="small" type="primary" secondary @click="syncFavoriteFolder">收藏不对点我</n-button>
     </div>
 
-    <div v-if="store.getFavoriteResult !== undefined" class="flex flex-col gap-row-2 overflow-auto box-border px-2">
+    <div v-if="store.getFavoriteResult !== undefined" class="flex flex-col gap-row-2 overflow-auto box-border px-2 flex-1 min-h-0">
       <ComicCard
         v-for="comicInFavorite in store.getFavoriteResult?.list"
         :key="comicInFavorite.id"
