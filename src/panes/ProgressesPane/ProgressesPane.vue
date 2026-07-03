@@ -205,7 +205,7 @@ async function selectDownloadDir() {
       </n-tab-pane>
 
       <template #suffix>
-        <span class="whitespace-nowrap text-ellipsis overflow-hidden">{{ downloadSpeed }}</span>
+        <span class="whitespace-nowrap text-ellipsis overflow-hidden shrink-0">{{ downloadSpeed }}</span>
       </template>
     </n-tabs>
     <SettingsDialog v-model:showing="settingsDialogShowing" />

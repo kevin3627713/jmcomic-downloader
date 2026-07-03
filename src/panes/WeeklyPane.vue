@@ -60,9 +60,9 @@ async function getWeekly() {
       :options="categoryOptions"
       :show-checkmark="false"
       size="small" />
-    <n-tabs class="h-full overflow-auto mb-2" v-model:value="currentWeeklyTypeId" type="line" size="small">
+    <n-tabs class="h-full overflow-auto flex flex-col" v-model:value="currentWeeklyTypeId" type="line" size="small">
       <n-tab-pane
-        class="h-full overflow-auto flex flex-col"
+        class="h-full overflow-auto flex flex-col p-0!"
         v-for="weeklyType in weeklyInfo.type"
         :key="weeklyType.id"
         :name="weeklyType.id"

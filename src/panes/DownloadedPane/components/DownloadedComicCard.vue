@@ -101,7 +101,7 @@ async function openComicPdf() {
         {{ comic.name }}
       </span>
       <span class="text-red">作者：{{ comic.author }}</span>
-      <div class="flex mt-auto gap-col-2">
+      <div class="flex mt-auto gap-2">
         <IconButton v-if="!isMobile" title="打开下载目录" @click="showComicDownloadDirInFileManager">
           <PhFolderOpen :size="24" />
         </IconButton>

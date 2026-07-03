@@ -143,7 +143,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="store.config !== undefined" class="h-screen flex flex-col overflow-hidden">
+  <div v-if="store.config !== undefined" class="h-[100dvh] flex flex-col overflow-hidden">
     <!-- Mobile top bar: action buttons + avatar -->
     <div v-if="!isDesktop" class="flex items-center gap-1 px-2 py-1.5 shrink-0 border-b border-gray-200">
       <n-button type="primary" @click="loginDialogShowing = true" size="small">
