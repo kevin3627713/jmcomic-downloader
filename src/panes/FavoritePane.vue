@@ -73,7 +73,7 @@ async function syncFavoriteFolder() {
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-2">
+  <div class="flex-1 min-h-0 flex flex-col gap-2">
     <div v-if="store.getFavoriteResult !== undefined" class="flex box-border px-2 pt-2">
       <n-select
         v-model:value="folderIdSelected"

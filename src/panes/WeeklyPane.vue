@@ -52,7 +52,7 @@ async function getWeekly() {
 </script>
 
 <template>
-  <div v-if="weeklyInfo !== undefined" class="h-full flex flex-col">
+  <div v-if="weeklyInfo !== undefined" class="flex-1 min-h-0 flex flex-col">
     <n-select
       v-if="categoryOptions !== undefined"
       class="flex box-border px-2 pt-2"

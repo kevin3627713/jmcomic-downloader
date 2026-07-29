@@ -171,7 +171,7 @@ async function selectDownloadDir() {
 </script>
 
 <template>
-  <div v-if="store.config !== undefined" class="flex flex-col flex-1 overflow-auto">
+  <div v-if="store.config !== undefined" class="flex flex-col flex-1 min-h-0 overflow-auto">
     <div class="flex gap-1 box-border px-2 pt-2.5">
       <n-input-group class="">
         <n-input-group-label size="small">下载目录</n-input-group-label>

@@ -227,7 +227,7 @@ function isDownloading(state: State) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-2 box-border">
+  <div class="flex-1 min-h-0 flex flex-col gap-2 box-border">
     <div v-if="store.pickedComic !== undefined" class="flex items-center select-none pt-2 gap-1 px-2">
       左键拖动进行框选，右键打开菜单
       <n-button class="ml-auto" size="small" @click="refreshChapters">刷新</n-button>

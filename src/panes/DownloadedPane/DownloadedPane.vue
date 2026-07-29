@@ -234,7 +234,7 @@ function useDropdown() {
 </script>
 
 <template>
-  <div v-if="store.config !== undefined" class="h-full flex flex-col">
+  <div v-if="store.config !== undefined" class="flex-1 min-h-0 flex flex-col">
     <div class="flex gap-1 box-border px-2 pt-2">
       <n-input-group>
         <n-input-group-label size="small">导出目录</n-input-group-label>

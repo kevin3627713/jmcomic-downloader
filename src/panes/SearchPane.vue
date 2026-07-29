@@ -71,7 +71,7 @@ async function search(keyword: string, page: number, sort: SearchSort) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col gap-2">
+  <div class="flex-1 min-h-0 flex flex-col gap-2">
     <n-input-group class="box-border px-2 pt-2">
       <FloatLabelInput
         class="min-w-0 flex-1"

@@ -241,26 +241,28 @@ onMounted(() => {
     <!-- Mobile layout: single column + bottom tab bar -->
     <div v-else class="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div class="flex-1 min-h-0 overflow-auto">
-        <div v-show="mobileTab === 'search'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'search'" class="flex-1 min-h-0 flex flex-col">
           <SearchPane />
         </div>
-        <div v-show="mobileTab === 'favorite'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'favorite'" class="flex-1 min-h-0 flex flex-col">
           <FavoritePane />
         </div>
-        <div v-show="mobileTab === 'weekly'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'weekly'" class="flex-1 min-h-0 flex flex-col">
           <WeeklyPane />
         </div>
-        <div v-show="mobileTab === 'downloaded'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'downloaded'" class="flex-1 min-h-0 flex flex-col">
           <DownloadedPane />
         </div>
-        <div v-show="mobileTab === 'chapter'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'chapter'" class="flex-1 min-h-0 flex flex-col">
           <ChapterPane />
         </div>
-        <div v-show="mobileTab === 'progresses'" class="h-full flex flex-col">
+        <div v-show="mobileTab === 'progresses'" class="flex-1 min-h-0 flex flex-col">
           <ProgressesPane />
         </div>
       </div>
-      <div class="flex items-stretch justify-around border-t border-gray-200 bg-white shrink-0">
+      <!-- Bottom tab bar: use pb-safe for iOS home indicator -->
+      <div class="flex items-stretch justify-around border-t border-gray-200 bg-white shrink-0"
+           :style="{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }">
         <button
           v-for="tab in mobileTabs"
           :key="tab.value"
