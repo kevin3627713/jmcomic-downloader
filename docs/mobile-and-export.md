@@ -26,7 +26,7 @@ PDF / CBZ 逐章生成，减少同时解码多个章节的内存压力。写完�
 - 章节作为独立页面打开，可返回原列表；章节独立滚动，下载和导出按钮固定在底部。
 - 使用实际按钮和勾选操作；手机上不启用鼠标框选，任务有暂停、继续、重试和取消按钮。
 - 设置使用可滚动标签表单，窄屏数字输入不再与长标签共挤一行。
-- 页面跟随 `visualViewport`，预留设备安全区域；短横屏使用更紧凑的章节操作区。
+- 常规页面用 CSS 固定到 WebView 的上下边缘，预留设备安全区域；仅在文本输入框获得焦点且视口明显缩小时，使用 `visualViewport` 避让键盘。首次启动、恢复前台和旋转屏幕不会把偏小的初始视口高度固化为页面高度，键盘关闭后也不依赖视口事件恢复底栏。短横屏使用更紧凑的章节操作区。
 - iOS 隐藏桌面文件夹选择和文件管理器入口。书库及导出任务提供原生 PDF 预览、分享和“存储到文件”。
 
 ## iOS 原生文件操作
@@ -35,7 +35,7 @@ PDF / CBZ 逐章生成，减少同时解码多个章节的内存压力。写完�
 
 分享使用应用沙盒里的文件 URL，不依赖 WebView 的 iframe 或桌面 opener。插件由 Tauri 构建脚本加入生成的 Apple 工程，无需提交 `src-tauri/gen/apple`。保留现有 iOS workflow，可在 macOS 上执行 `pnpm tauri ios init` 和构建。
 
-本次环境为 Windows，未编译 Swift / IPA、未连接真机。需要在 macOS CI 确认编译，再在 iPhone / iPad 验证键盘、安全区域、Quick Look、分享与存储到文件，以及大型漫画内存占用。
+本地环境为 Windows，iOS 构建由现有 GitHub Actions 在 macOS 上执行。提交 `3571492` 已通过原生编译并生成 IPA，用户反馈手机基本操作可用，但首次竖屏打开时底栏偏高，横屏后再竖屏会恢复。本次修复移除正常布局对初始 `visualViewport.height` 的依赖，浏览器回归覆盖该高度偏差；更新后的首次启动、安全区域和键盘效果仍需在手机上确认。Quick Look、分享与存储到文件，以及大型漫画内存占用也需真机验证。
 
 ## 本地验证
 
@@ -76,6 +76,15 @@ npx --yes --package @playwright/cli playwright-cli -s=jm-ui run-code --filename 
 ```
 
 模拟 iOS UA 检查 320×568、390×844、844×390 下的章节操作区及滚动；检查设置保存、PDF 预览与分享、CBZ 分享、添加任务和暂停 / 继续 / 重试 / 取消，以及批量导出、登录、收藏、每周必看和日志。测试脚本只确认 WebView 到原生命令的调用，不代表 UIKit 面板已在真机上验证。截图输出到忽略的 `output/playwright` 目录。
+
+视口回归脚本 `scripts/ui-viewport.js` 模拟页面高 844、启动时 `visualViewport.height` 仅为 763 的场景，并检查恢复前台、横竖屏切换、键盘展开、键盘关闭后视口数值仍滞后、缩放和不支持 Visual Viewport 的情况。常规页面及底栏必须始终到达屏幕底部；键盘出现时输入区必须避让，关闭后底栏恢复。该脚本注入的视口替身在重新加载后仍然保留，应在独立浏览器会话中运行：
+
+```powershell
+npx --yes --package @playwright/cli playwright-cli -s=jm-viewport open http://127.0.0.1:5006/
+npx --yes --package @playwright/cli playwright-cli -s=jm-viewport run-code --filename scripts/ui-fixtures.js
+npx --yes --package @playwright/cli playwright-cli -s=jm-viewport run-code --filename scripts/ui-viewport.js
+npx --yes --package @playwright/cli playwright-cli -s=jm-viewport close
+```
 
 在预览地址加 `?platform=windows` 可检查桌面 UI，加 `?books=30` 可检查书库翻页。每次更改地址后需要重新运行 fixture 脚本。
 

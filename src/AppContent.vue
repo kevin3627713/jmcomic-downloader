@@ -25,12 +25,14 @@ import {
 } from '@phosphor-icons/vue'
 import { useStore } from './store'
 import { useIsMobile } from './composables/useIsMobile'
+import { useAppViewport } from './composables/useAppViewport'
 import type { CurrentTabName } from './types'
 
 const store = useStore()
 const message = useMessage()
 const notification = useNotification()
 const isMobile = useIsMobile()
+useAppViewport()
 const isDesktop = computed(() => !isMobile.value)
 watch(isMobile, (mobile) => document.documentElement.classList.toggle('mobile-device', mobile), { immediate: true })
 const loginDialogShowing = ref(false)
@@ -80,28 +82,6 @@ function navigate(tab: typeof store.mobileTab) {
   store.mobileTab = tab
   if (tab !== 'progresses') store.currentTabName = tab
 }
-
-// Resize against the visible viewport so the keyboard cannot cover action buttons.
-function updateViewport() {
-  const viewport = window.visualViewport
-  document.documentElement.style.setProperty('--app-height', `${viewport?.height ?? window.innerHeight}px`)
-  document.documentElement.style.setProperty('--app-top', `${viewport?.offsetTop ?? 0}px`)
-  document.documentElement.classList.toggle(
-    'keyboard-open',
-    (viewport?.height ?? window.innerHeight) < window.innerHeight - 120,
-  )
-}
-onMounted(() => {
-  updateViewport()
-  window.visualViewport?.addEventListener('resize', updateViewport)
-  window.visualViewport?.addEventListener('scroll', updateViewport)
-  window.addEventListener('resize', updateViewport)
-})
-onUnmounted(() => {
-  window.visualViewport?.removeEventListener('resize', updateViewport)
-  window.visualViewport?.removeEventListener('scroll', updateViewport)
-  window.removeEventListener('resize', updateViewport)
-})
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 watch(
