@@ -13,9 +13,14 @@ private struct OpenFilesArgs: Decodable {
 final class FileActionsPlugin: Plugin, QLPreviewControllerDataSource {
     private var previewURLs: [URL] = []
     private weak var hostWebview: WKWebView?
+    private let startupRotation = StartupRotation()
 
     @objc public override func load(webview: WKWebView) {
         hostWebview = webview
+        DispatchQueue.main.async { [weak self, weak webview] in
+            guard let webview = webview else { return }
+            self?.startupRotation.start(webview: webview)
+        }
     }
 
     @objc public func openFiles(_ invoke: Invoke) throws {

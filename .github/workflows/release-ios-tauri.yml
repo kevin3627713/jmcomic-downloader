@@ -27,6 +27,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify native startup rotation in iPhone simulator
+        run: bash .github/scripts/test-startup-rotation.sh
+
       - name: Setup node
         uses: actions/setup-node@v4
         with:
