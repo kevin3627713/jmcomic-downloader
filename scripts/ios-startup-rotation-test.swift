@@ -76,7 +76,9 @@ final class RotationTestAppDelegate: UIResponder, UIApplicationDelegate {
                 }
                 self.saveResult(["status": "passed", "modalDismissed": true, "portrait": true,
                                  "webviewFillsRoot": true, "metrics": metrics, "expectedHeight": expected,
-                                 "orientations": self.rotation.completedOrientations.map { $0.rawValue }])
+                                 "orientations": self.rotation.completedOrientations.map {
+                                     $0 == .landscapeRight ? "landscapeRight" : "portrait"
+                                 }])
             }
     }
 

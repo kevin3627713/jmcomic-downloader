@@ -75,5 +75,9 @@ if [ ! -f "$RESULT" ]; then
   exit 1
 fi
 cat "$RESULT"
-jq -e '.status == "passed" and .modalDismissed and .portrait and .webviewFillsRoot and .orientations == [4, 1]' "$RESULT"
+jq -e '.status == "passed" and .modalDismissed and .portrait and .webviewFillsRoot and .orientations == ["landscapeRight", "portrait"]' "$RESULT"
+if grep -q 'Unbalanced calls.*StartupOrientationController' "$TEST_DIR/process.log"; then
+  echo "Temporary controller appearance transitions were not balanced."
+  exit 1
+fi
 echo "Native startup rotation passed: landscape, portrait, modal cleanup, full WebView, JS viewport, and one-time execution."

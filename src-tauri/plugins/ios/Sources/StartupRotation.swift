@@ -5,6 +5,7 @@ import WebKit
 // orientation. This also works with Tauri's legacy (non-UIScene) windows.
 private final class StartupOrientationController: UIViewController {
     let orientation: UIInterfaceOrientation
+    var allowsAllOrientations = false
     var onReady: (() -> Void)?
     var onFailure: ((String) -> Void)?
     private var appeared = false
@@ -19,10 +20,12 @@ private final class StartupOrientationController: UIViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        orientation.isLandscape ? .landscapeRight : .portrait
+        allowsAllOrientations ? .allButUpsideDown : (orientation.isLandscape ? .landscapeRight : .portrait)
     }
 
-    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { orientation }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
+        allowsAllOrientations ? .portrait : orientation
+    }
     override var shouldAutorotate: Bool { true }
 
     override func loadView() {
@@ -165,8 +168,17 @@ final class StartupRotation {
             webview.layoutIfNeeded()
             webview.evaluateJavaScript("window.dispatchEvent(new Event('resize'))", completionHandler: nil)
         }
-        if let root = presenter, root.presentedViewController === landscape, landscape != nil {
-            root.dismiss(animated: false, completion: restored)
+        if let root = presenter, let landscape = landscape, root.presentedViewController === landscape {
+            // Dismiss each full-screen presentation in order. The underlying
+            // temporary controller must accept portrait while it reappears.
+            landscape.allowsAllOrientations = true
+            if let portrait = portrait, landscape.presentedViewController === portrait {
+                portrait.dismiss(animated: false) {
+                    DispatchQueue.main.async { landscape.dismiss(animated: false, completion: restored) }
+                }
+            } else {
+                landscape.dismiss(animated: false, completion: restored)
+            }
         } else {
             restored()
         }
