@@ -14,9 +14,10 @@ const showing = defineModel<boolean>('showing', { required: true })
 const username = ref<string>(store.config?.username ?? '')
 const password = ref<string>(store.config?.password ?? '')
 const remember = ref<boolean>(username.value !== '' && password.value !== '')
+const loggingIn = ref(false)
 
 async function onLogin() {
-  if (store.config === undefined) {
+  if (store.config === undefined || loggingIn.value) {
     return
   }
   if (username.value === '') {
@@ -28,18 +29,26 @@ async function onLogin() {
     return
   }
 
-  const result = await commands.login(username.value, password.value)
-  if (result.status === 'error') {
-    console.error(result.error)
-    return
+  loggingIn.value = true
+  try {
+    const result = await commands.login(username.value, password.value)
+    if (result.status === 'error') {
+      message.error(result.error.err_message)
+      return false
+    }
+    store.userProfile = result.data
+    message.success('登录成功')
+    if (remember.value) {
+      store.config.username = username.value
+      store.config.password = password.value
+    }
+    showing.value = false
+  } catch (error) {
+    message.error(String(error))
+    return false
+  } finally {
+    loggingIn.value = false
   }
-  store.userProfile = result.data
-  message.success('登录成功')
-  if (remember.value) {
-    store.config.username = username.value
-    store.config.password = password.value
-  }
-  showing.value = false
 }
 
 function clearUsernameAndPasswordInConfig() {
@@ -58,13 +67,14 @@ function clearUsernameAndPasswordInConfig() {
       :showIcon="false"
       title="账号登录"
       positive-text="登录"
+      :positive-button-props="{ loading: loggingIn, disabled: loggingIn }"
       @positive-click="onLogin"
       @close="showing = false"
       @keydown.enter="onLogin">
       <div class="flex flex-col gap-2">
         <FloatLabelInput label="用户名" v-model:value="username" />
         <FloatLabelInput label="密码" v-model:value="password" type="password" />
-        <div class="flex justify-between">
+        <div class="flex flex-wrap gap-2 justify-between">
           <n-tooltip>
             用户名和密码将以明文保存在配置文件中
             <template #trigger>
@@ -72,7 +82,7 @@ function clearUsernameAndPasswordInConfig() {
             </template>
           </n-tooltip>
           <n-button type="primary" size="tiny" secondary @click="clearUsernameAndPasswordInConfig">
-            清除配置文件中的用户名和密码
+            清除保存的账号
           </n-button>
         </div>
       </div>

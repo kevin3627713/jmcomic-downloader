@@ -10,9 +10,12 @@ import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { PhChecks, PhCheck, PhX } from '@phosphor-icons/vue'
 import UpdateDownloadedComicsButton from './components/UpdateDownloadedComicsButton.vue'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { useComicExport } from '../../composables/useComicExport'
 
 const store = useStore()
 const isMobile = useIsMobile()
+const { exportComic } = useComicExport()
+const bulkExporting = ref(false)
 
 const selectedIds = ref<Set<number>>(new Set())
 const checkedIds = ref<Set<number>>(new Set())
@@ -48,7 +51,9 @@ watch(currentPage, () => {
   selectedIds.value.clear()
   checkedIds.value.clear()
   selectionAreaRef.value?.selection?.clearSelection()
-  selectionAreaRef.value?.$el.scrollTo({ top: 0, behavior: 'instant' })
+  const area = selectionAreaRef.value
+  const element = area instanceof HTMLElement ? area : area?.$el
+  element?.scrollTo({ top: 0, behavior: 'instant' })
 })
 
 // 监听标签页变化，更新下载的漫画列表
@@ -131,35 +136,19 @@ function handleContextMenu(comic: Comic) {
   selectedIds.value.add(comic.id)
 }
 
-async function exportCbz() {
-  if (checkedIds.value.size === 0) {
-    return
-  }
-
-  store.progressesPaneTabName = 'export'
-  const comics = currentPageComics.value.filter((comic) => checkedIds.value.has(comic.id))
-  for (const comic of comics) {
-    const result = await commands.exportCbz(comic)
-    if (result.status === 'error') {
-      console.error(result.error)
-      return
-    }
-  }
+function toggleAll() {
+  if (checkedIds.value.size === currentPageComics.value.length) checkedIds.value.clear()
+  else checkedIds.value = new Set(currentPageComics.value.map((c) => c.id))
 }
-
-async function exportPdf() {
-  if (checkedIds.value.size === 0) {
-    return
-  }
-
-  store.progressesPaneTabName = 'export'
-  const comics = currentPageComics.value.filter((comic) => checkedIds.value.has(comic.id))
-  for (const comic of comics) {
-    const result = await commands.exportPdf(comic)
-    if (result.status === 'error') {
-      console.error(result.error)
-      return
-    }
+async function exportSelected(format: 'pdf' | 'cbz') {
+  if (bulkExporting.value) return
+  const comics = currentPageComics.value.filter((c) => checkedIds.value.has(c.id))
+  bulkExporting.value = true
+  try {
+    for (const comic of comics) await exportComic(comic, format)
+    if (isMobile.value) store.mobileTab = 'progresses'
+  } finally {
+    bulkExporting.value = false
   }
 }
 
@@ -235,8 +224,8 @@ function useDropdown() {
 
 <template>
   <div v-if="store.config !== undefined" class="flex-1 min-h-0 flex flex-col">
-    <div class="flex gap-1 box-border px-2 pt-2">
-      <n-input-group>
+    <div class="pane-toolbar flex gap-2 box-border px-4 pt-3">
+      <n-input-group v-if="store.runtimePlatform !== 'ios'" class="min-w-0 flex-1">
         <n-input-group-label size="small">导出目录</n-input-group-label>
         <n-input v-model:value="store.config.exportDir" size="small" readonly @click="selectExportDir" />
         <n-button v-if="!isMobile" class="w-10" size="small" @click="showExportDirInFileManager">
@@ -249,19 +238,32 @@ function useDropdown() {
       </n-input-group>
       <update-downloaded-comics-button />
     </div>
-    <div class="flex gap-2 items-center px-2 select-none">
-      <div class="animate-pulse text-sm text-red flex flex-col">
-        <div>左键拖动进行框选，右键打开菜单</div>
-        <div>右边的按钮作用于勾选项</div>
-      </div>
-      <n-button class="ml-auto" type="primary" size="small" @click="exportCbz">导出cbz</n-button>
-      <n-button type="primary" size="small" @click="exportPdf">导出pdf</n-button>
+    <div class="chapter-tools">
+      <span>{{ downloadedComics.length }} 本漫画 · 已选 {{ checkedIds.size }} 本</span>
+      <n-button :disabled="!currentPageComics.length" @click="toggleAll">
+        {{ checkedIds.size && checkedIds.size === currentPageComics.length ? '取消全选' : '全选本页' }}
+      </n-button>
+      <n-button
+        @click="
+          async () => {
+            downloadedComics = await commands.getDownloadedComics()
+          }
+        ">
+        刷新
+      </n-button>
     </div>
-    <SelectionArea
-      class="flex flex-col overflow-auto box-border px-2 selection-container mb-2 flex-1 min-h-0"
+    <p v-if="store.runtimePlatform === 'ios'" class="px-4 m-0 mb-2 text-xs text-gray">
+      导出完成后可分享或保存到“文件”。
+    </p>
+    <div v-if="!downloadedComics.length" class="empty-state">
+      <n-empty description="书库还没有漫画，下载完成后会显示在这里" />
+    </div>
+    <component
+      :is="isMobile ? 'div' : SelectionArea"
+      class="flex flex-col overflow-auto box-border px-4 selection-container mb-2 flex-1 min-h-0"
       ref="selectionAreaRef"
       :options="{ selectables: '.selectable', features: { deselectOnBlur: true } }"
-      @contextmenu="showDropdown"
+      @contextmenu="!isMobile && showDropdown($event)"
       @move="updateSelectedIds"
       @start="unselectAll">
       <DownloadedComicCard
@@ -273,10 +275,17 @@ function useDropdown() {
         :checkbox-checked="checkboxChecked"
         :handle-checkbox-click="handleCheckboxClick"
         :handle-context-menu="handleContextMenu" />
-    </SelectionArea>
+    </component>
 
+    <div v-if="checkedIds.size" class="chapter-actions">
+      <n-button class="flex-1" type="primary" :loading="bulkExporting" @click="exportSelected('pdf')">
+        导出所选 PDF
+      </n-button>
+      <n-button class="flex-1" :loading="bulkExporting" @click="exportSelected('cbz')">导出所选 CBZ</n-button>
+    </div>
     <n-pagination
       class="box-border p-2 pt-0 mt-auto"
+      :simple="isMobile"
       :page-count="pageCount"
       :page="currentPage"
       @update:page="currentPage = $event" />

@@ -78,3 +78,13 @@ pub async fn get_comic(app: AppHandle, aid: i64) -> anyhow::Result<Comic> {
 
     Ok(comic)
 }
+/// Publish a complete file without exposing a partially written destination.
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write;
+    let parent = path.parent().context("文件路径没有父目录")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    file.write_all(bytes)?;
+    file.as_file().sync_all()?;
+    file.persist(path).map_err(|err| err.error)?;
+    Ok(())
+}

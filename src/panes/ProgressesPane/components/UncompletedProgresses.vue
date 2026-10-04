@@ -5,6 +5,8 @@ import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { commands, DownloadTaskState } from '../../../bindings.ts'
 import { DropdownOption, NIcon, ProgressProps } from 'naive-ui'
 import { useStore } from '../../../store.ts'
+import { useIsMobile } from '../../../composables/useIsMobile'
+import { useMessage } from 'naive-ui'
 import {
   PhPause,
   PhChecks,
@@ -16,6 +18,24 @@ import {
 } from '@phosphor-icons/vue'
 
 const store = useStore()
+const isMobile = useIsMobile()
+const message = useMessage()
+const busyIds = ref(new Set<number>())
+async function controlTask(id: number, action: 'toggle' | 'cancel') {
+  if (busyIds.value.has(id)) return
+  busyIds.value.add(id)
+  try {
+    if (action === 'toggle') await handleProgressDoubleClick(store.progresses.get(id)?.state ?? 'Failed', id)
+    else {
+      const result = await commands.cancelDownloadTask(id)
+      if (result.status === 'error') message.error(result.error.err_title)
+    }
+  } catch (error) {
+    message.error(String(error))
+  } finally {
+    busyIds.value.delete(id)
+  }
+}
 
 const selectedIds = ref<Set<number>>(new Set())
 const selectionAreaRef = ref<InstanceType<typeof SelectionArea>>()
@@ -61,12 +81,12 @@ async function handleProgressDoubleClick(state: DownloadTaskState, chapterId: nu
   if (state === 'Downloading' || state === 'Pending') {
     const result = await commands.pauseDownloadTask(chapterId)
     if (result.status === 'error') {
-      console.error(result.error)
+      message.error(result.error.err_message)
     }
   } else if (state === 'Paused') {
     const result = await commands.resumeDownloadTask(chapterId)
     if (result.status === 'error') {
-      console.error(result.error)
+      message.error(result.error.err_message)
     }
   } else {
     const progressData = store.progresses.get(chapterId)
@@ -76,7 +96,7 @@ async function handleProgressDoubleClick(state: DownloadTaskState, chapterId: nu
     const { comic } = progressData
     const result = await commands.createDownloadTask(comic, chapterId)
     if (result.status === 'error') {
-      console.error(result.error)
+      message.error(result.error.err_message)
     }
   }
 }
@@ -258,27 +278,29 @@ function stateToColorClass(state: DownloadTaskState) {
 </script>
 
 <template>
-  <SelectionArea
+  <component
+    :is="isMobile ? 'div' : SelectionArea"
     ref="selectionAreaRef"
     class="h-full flex flex-col selection-container px-2"
     :options="{ selectables: '.selectable', features: { deselectOnBlur: true } }"
-    @contextmenu="showDropdown"
+    @contextmenu="!isMobile && showDropdown($event)"
     @move="updateSelectedIds"
     @start="unselectAll">
-    <span class="ml-auto select-none">左键拖动进行框选，右键打开菜单，双击暂停/继续</span>
-    <div class="h-full select-none">
+    <span v-if="!isMobile" class="ml-auto select-none">左键拖动进行框选，右键打开菜单，双击暂停/继续</span>
+    <div class="select-none">
+      <div v-if="!uncompletedProgresses.length" class="empty-state"><n-empty description="没有进行中的任务" /></div>
       <div
         v-for="[chapterId, { state, comic, chapterInfo, percentage, indicator }] in uncompletedProgresses"
         :key="chapterId"
         ref="selectableRefs"
         :data-key="chapterId"
         :class="[
-          'selectable p-3 mb-2 rounded-lg',
+          'selectable task-card p-3 mb-2 rounded-lg',
           selectedIds.has(chapterId) ? 'selected shadow-md' : 'hover:bg-gray-1',
         ]"
         @dblclick="() => handleProgressDoubleClick(state, chapterId)"
         @contextmenu="() => handleProgressContextMenu(chapterId)">
-        <div class="grid grid-cols-[1fr_1fr]">
+        <div class="grid grid-cols-[1fr_1fr] task-titles">
           <div class="text-ellipsis whitespace-nowrap overflow-hidden" :title="comic.name">
             {{ comic.name }}
           </div>
@@ -303,6 +325,12 @@ function stateToColorClass(state: DownloadTaskState) {
             {{ indicator }}
           </n-progress>
         </div>
+        <div v-if="isMobile" class="action-row mt-3">
+          <n-button :loading="busyIds.has(chapterId)" @click="controlTask(chapterId, 'toggle')">
+            {{ state === 'Paused' ? '继续' : state === 'Failed' ? '重试' : '暂停' }}
+          </n-button>
+          <n-button :disabled="busyIds.has(chapterId)" @click="controlTask(chapterId, 'cancel')">取消任务</n-button>
+        </div>
       </div>
     </div>
     <n-dropdown
@@ -313,7 +341,7 @@ function stateToColorClass(state: DownloadTaskState) {
       :options="dropdownOptions"
       :show="dropdownShowing"
       :on-clickoutside="() => (dropdownShowing = false)" />
-  </SelectionArea>
+  </component>
 </template>
 
 <style scoped>

@@ -658,6 +658,7 @@ pub fn get_downloaded_comics(app: AppHandle) -> Vec<Comic> {
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
 pub fn export_cbz(app: AppHandle, comic: Comic) -> CommandResult<()> {
+    let comic = get_synced_comic(app.clone(), comic)?;
     let comic_title = &comic.name;
     export::cbz(&app, &comic)
         .context(format!("漫画`{comic_title}`导出cbz失败"))
@@ -669,6 +670,7 @@ pub fn export_cbz(app: AppHandle, comic: Comic) -> CommandResult<()> {
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
 pub fn export_pdf(app: AppHandle, comic: Comic) -> CommandResult<()> {
+    let comic = get_synced_comic(app.clone(), comic)?;
     let comic_title = &comic.name;
     export::pdf(&app, &comic)
         .context(format!("漫画`{comic_title}`导出pdf失败"))
@@ -695,6 +697,120 @@ pub fn get_comic_pdf_path(app: AppHandle, comic: Comic) -> CommandResult<Option<
     } else {
         Ok(None)
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_runtime_platform() -> String {
+    std::env::consts::OS.to_owned()
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn get_comic_cbz_paths(app: AppHandle, comic: Comic) -> CommandResult<Vec<String>> {
+    let comic = get_synced_comic(app.clone(), comic)?;
+    let dir = comic
+        .get_comic_export_dir(&app)
+        .map_err(|err| CommandError::from("获取导出目录失败", err))?
+        .join("cbz");
+    let mut chapters = comic
+        .chapter_infos
+        .iter()
+        .filter(|c| c.is_downloaded == Some(true))
+        .collect::<Vec<_>>();
+    chapters.sort_by_key(|c| c.order);
+    let mut paths = Vec::new();
+    for chapter in chapters {
+        let name = chapter
+            .get_chapter_download_dir_name()
+            .map_err(|err| CommandError::from("获取章节文件名失败", err))?;
+        let path = dir.join(format!("{name}.cbz"));
+        if path.is_file() {
+            paths.push(path.to_string_lossy().into_owned());
+        }
+    }
+    Ok(paths)
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn open_exported_files(app: AppHandle, paths: Vec<String>, preview: bool) -> CommandResult<()> {
+    let validate = || -> anyhow::Result<Vec<String>> {
+        anyhow::ensure!(!paths.is_empty(), "没有可打开的导出文件");
+        let root = std::fs::canonicalize(&app.get_config().read().export_dir)?;
+        let mut files = Vec::new();
+        for path in paths {
+            let path = std::fs::canonicalize(path)?;
+            anyhow::ensure!(path.starts_with(&root), "文件不在导出目录中");
+            if path.is_dir() {
+                let mut entries = Vec::new();
+                for entry in std::fs::read_dir(&path)? {
+                    let path = entry?.path();
+                    if path.is_file()
+                        && path
+                            .extension()
+                            .and_then(|ext| ext.to_str())
+                            .is_some_and(|ext| {
+                                matches!(ext.to_ascii_lowercase().as_str(), "pdf" | "cbz")
+                            })
+                    {
+                        entries.push(path);
+                    }
+                }
+                entries.sort();
+                files.extend(entries);
+            } else {
+                files.push(path);
+            }
+        }
+        anyhow::ensure!(!files.is_empty(), "没有可分享的导出文件");
+        files
+            .into_iter()
+            .map(|path| {
+                let path = std::fs::canonicalize(path)?;
+                anyhow::ensure!(
+                    path.starts_with(&root) && path.is_file(),
+                    "文件不在导出目录中"
+                );
+                anyhow::ensure!(
+                    path.extension()
+                        .and_then(|ext| ext.to_str())
+                        .is_some_and(|ext| matches!(
+                            ext.to_ascii_lowercase().as_str(),
+                            "pdf" | "cbz"
+                        )),
+                    "不支持的导出文件类型"
+                );
+                anyhow::ensure!(path.metadata()?.len() > 0, "导出文件为空");
+                #[cfg(target_os = "ios")]
+                let path = path.to_string_lossy().into_owned();
+                #[cfg(not(target_os = "ios"))]
+                let path = path
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .to_owned();
+                Ok(path)
+            })
+            .collect()
+    };
+    let paths = validate().map_err(|err| CommandError::from("检查导出文件失败", err))?;
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_file_actions::FileActionsExt;
+        app.file_actions()
+            .open(paths, preview)
+            .map_err(|err| CommandError::from("打开系统文件面板失败", err))?;
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = preview;
+        for path in paths {
+            app.opener()
+                .open_path(path, None::<&str>)
+                .map_err(|err| CommandError::from("打开导出文件失败", err))?;
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::needless_pass_by_value)]

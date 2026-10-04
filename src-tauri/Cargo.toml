@@ -18,6 +18,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = { version = "2" }
 tauri-plugin-dialog = { version = "2" }
+tempfile = "3"
+
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
@@ -38,7 +40,7 @@ aes = { version = "0.8.4" }
 anyhow = { version = "1" }
 tokio = { version = "1.40.0", features = ["full"] }
 bytes = { version = "1.7.2" }
-image = { version = "0.25.5", default-features = false, features = ["jpeg", "png", "webp"] }
+image = { version = "0.25.5", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 lopdf = { git = "https://github.com/lanyeeee/lopdf", features = ["embed_image_jpeg", "embed_image_png", "embed_image_webp"] }
 flate2 = { version = "1.0.34" }
 parking_lot = { version = "0.12.3", features = ["send_guard"] }
@@ -53,6 +55,9 @@ strfmt = { version = "0.2.4" }
 walkdir = { version = "2.5.0" }
 indexmap = { version = "2.10.0" }
 fastrand = { version = "2" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-file-actions = { path = "plugins" }
 
 [profile.release]
 strip = true

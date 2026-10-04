@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useEventSubscriptions } from '../composables/useEventSubscriptions'
 import { LogEvent, LogLevel, events, commands } from '../bindings.ts'
 import { useNotification } from 'naive-ui'
 import { onMounted, ref, watch, computed } from 'vue'
@@ -10,6 +11,7 @@ import { darkTheme } from 'naive-ui'
 type LogRecord = LogEvent & { id: number; formatedLog: string }
 
 const store = useStore()
+const subscribe = useEventSubscriptions()
 
 const notification = useNotification()
 
@@ -70,23 +72,25 @@ watch(showing, async () => {
 })
 
 onMounted(async () => {
-  await events.logEvent.listen(async ({ payload: logEvent }) => {
-    const logRecord: LogRecord = {
-      ...logEvent,
-      id: nextLogRecordId++,
-      formatedLog: formatLogEvent(logEvent),
-    }
-    logRecords.value.push(logRecord)
+  await subscribe(
+    events.logEvent.listen(async ({ payload: logEvent }) => {
+      const logRecord: LogRecord = {
+        ...logEvent,
+        id: nextLogRecordId++,
+        formatedLog: formatLogEvent(logEvent),
+      }
+      logRecords.value.push(logRecord)
 
-    const { level, fields } = logEvent
-    if (level === 'ERROR') {
-      notification.error({
-        title: fields['err_title'] as string,
-        description: fields['message'] as string,
-        duration: 0,
-      })
-    }
-  })
+      const { level, fields } = logEvent
+      if (level === 'ERROR') {
+        notification.error({
+          title: fields['err_title'] as string,
+          description: fields['message'] as string,
+          duration: 0,
+        })
+      }
+    }),
+  )
 })
 
 function formatLogEvent(logEvent: LogEvent): string {
@@ -143,13 +147,15 @@ async function showLogsDirInFileManager() {
       @close="showing = false"
       style="width: 95%">
       <div class="mb-2 flex flex-wrap gap-2">
-        <n-input-group class="w-100">
-          <n-input size="small" v-model:value="searchText" placeholder="搜素日志..." clearable />
+        <n-input-group class="w-full min-w-0">
+          <n-input size="small" v-model:value="searchText" placeholder="搜索日志…" clearable />
           <n-select size="small" v-model:value="selectedLevel" :options="logLevelOptions" style="width: 120px" />
         </n-input-group>
 
         <div class="flex flex-wrap gap-2 ml-auto items-center">
-          <n-button size="small" @click="showLogsDirInFileManager">打开日志目录</n-button>
+          <n-button v-if="store.runtimePlatform !== 'ios'" size="small" @click="showLogsDirInFileManager">
+            打开日志目录
+          </n-button>
           <n-checkbox v-model:checked="store.config.enableFileLogger">输出文件日志</n-checkbox>
         </div>
       </div>

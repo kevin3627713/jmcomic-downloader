@@ -1,183 +1,178 @@
 <script setup lang="tsx">
-import { onMounted, ref, watch } from 'vue'
-import { commands } from './bindings.ts'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { commands } from './bindings'
 import { useMessage, useNotification } from 'naive-ui'
 import LoginDialog from './dialogs/LoginDialog.vue'
+import AboutDialog from './dialogs/AboutDialog.vue'
+import LogDialog from './dialogs/LogDialog.vue'
+import SettingsDialog from './dialogs/SettingsDialog.vue'
 import SearchPane from './panes/SearchPane.vue'
 import ChapterPane from './panes/ChapterPane.vue'
-import ProgressesPane from './panes/ProgressesPane/ProgressesPane.vue'
 import FavoritePane from './panes/FavoritePane.vue'
-import AboutDialog from './dialogs/AboutDialog.vue'
+import WeeklyPane from './panes/WeeklyPane.vue'
+import DownloadedPane from './panes/DownloadedPane/DownloadedPane.vue'
+import ProgressesPane from './panes/ProgressesPane/ProgressesPane.vue'
 import {
   PhInfo,
   PhUser,
   PhClockCounterClockwise,
   PhMagnifyingGlass,
   PhStar,
-  PhCalendar,
   PhHardDrive,
-  PhBookOpen,
   PhArrowDown,
+  PhGearSix,
+  PhCaretLeft,
 } from '@phosphor-icons/vue'
-import DownloadedPane from './panes/DownloadedPane/DownloadedPane.vue'
-import { useStore } from './store.ts'
-import LogDialog from './dialogs/LogDialog.vue'
-import WeeklyPane from './panes/WeeklyPane.vue'
+import { useStore } from './store'
+import { useIsMobile } from './composables/useIsMobile'
+import type { CurrentTabName } from './types'
 
 const store = useStore()
-
 const message = useMessage()
 const notification = useNotification()
-
-const loginDialogShowing = ref<boolean>(false)
-const aboutDialogShowing = ref<boolean>(false)
-const logViewerShowing = ref<boolean>(false)
-
-// --- Responsive layout ---
-const isDesktop = ref(window.matchMedia('(min-width: 768px)').matches)
-
-type MobileTab = 'search' | 'favorite' | 'weekly' | 'downloaded' | 'chapter' | 'progresses'
-const mobileTab = ref<MobileTab>('search')
-
-const mobileTabs: { value: MobileTab; label: string; icon: any }[] = [
-  { value: 'search', label: '搜索', icon: PhMagnifyingGlass },
-  { value: 'favorite', label: '收藏夹', icon: PhStar },
-  { value: 'weekly', label: '每周必看', icon: PhCalendar },
-  { value: 'downloaded', label: '本地库存', icon: PhHardDrive },
-  { value: 'chapter', label: '章节详情', icon: PhBookOpen },
-  { value: 'progresses', label: '下载', icon: PhArrowDown },
-]
+const isMobile = useIsMobile()
+const isDesktop = computed(() => !isMobile.value)
+watch(isMobile, (mobile) => document.documentElement.classList.toggle('mobile-device', mobile), { immediate: true })
+const loginDialogShowing = ref(false)
+const aboutDialogShowing = ref(false)
+const logViewerShowing = ref(false)
+const settingsShowing = ref(false)
+const startupError = ref('')
+const lastBrowseTab = ref<CurrentTabName>('search')
+const activeDownloads = computed(
+  () => [...store.progresses.values()].filter((p) => ['Pending', 'Downloading', 'Paused'].includes(p.state)).length,
+)
+const mobileTabs = [
+  { value: 'search', label: '发现', icon: PhMagnifyingGlass },
+  { value: 'favorite', label: '收藏', icon: PhStar },
+  { value: 'downloaded', label: '书库', icon: PhHardDrive },
+  { value: 'progresses', label: '任务', icon: PhArrowDown },
+] as const
+const pageTitle = computed(
+  () =>
+    ({
+      search: '发现漫画',
+      weekly: '每周必看',
+      favorite: '我的收藏',
+      downloaded: '本地书库',
+      chapter: '章节详情',
+      progresses: '下载与导出',
+    })[store.mobileTab],
+)
+const activeMobileTab = computed(() =>
+  store.mobileTab === 'weekly' ? 'search' : store.mobileTab === 'chapter' ? lastBrowseTab.value : store.mobileTab,
+)
 
 watch(
   () => store.currentTabName,
-  (tab) => {
-    if (!isDesktop.value) {
-      mobileTab.value = tab
-    }
+  (tab, previous) => {
+    if (tab === 'chapter' && previous !== 'chapter') lastBrowseTab.value = previous
+    store.mobileTab = tab
   },
 )
+watch(
+  () => store.pickedComic?.id,
+  () => {
+    if (store.currentTabName === 'chapter') store.mobileTab = 'chapter'
+  },
+)
+function navigate(tab: typeof store.mobileTab) {
+  store.mobileTab = tab
+  if (tab !== 'progresses') store.currentTabName = tab
+}
 
-watch(mobileTab, (tab) => {
-  if (tab !== 'progresses') {
-    store.currentTabName = tab as 'search' | 'favorite' | 'weekly' | 'downloaded' | 'chapter'
-  }
+// Resize against the visible viewport so the keyboard cannot cover action buttons.
+function updateViewport() {
+  const viewport = window.visualViewport
+  document.documentElement.style.setProperty('--app-height', `${viewport?.height ?? window.innerHeight}px`)
+  document.documentElement.style.setProperty('--app-top', `${viewport?.offsetTop ?? 0}px`)
+  document.documentElement.classList.toggle(
+    'keyboard-open',
+    (viewport?.height ?? window.innerHeight) < window.innerHeight - 120,
+  )
+}
+onMounted(() => {
+  updateViewport()
+  window.visualViewport?.addEventListener('resize', updateViewport)
+  window.visualViewport?.addEventListener('scroll', updateViewport)
+  window.addEventListener('resize', updateViewport)
+})
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', updateViewport)
+  window.visualViewport?.removeEventListener('scroll', updateViewport)
+  window.removeEventListener('resize', updateViewport)
 })
 
+let saveTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => store.config,
-  async () => {
-    if (store.config === undefined) {
-      return
-    }
-
-    const result = await commands.saveConfig(store.config)
-    if (result.status === 'error') {
-      console.error(result.error)
-      return
-    }
-    message.success('保存配置成功')
+  (config, previous) => {
+    if (!config || !previous) return
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(async () => {
+      try {
+        const result = await commands.saveConfig(config)
+        if (result.status === 'error') message.error(result.error.err_message)
+      } catch (error) {
+        message.error(String(error))
+      }
+    }, 400)
   },
   { deep: true },
 )
+onUnmounted(() => clearTimeout(saveTimer))
 
-onMounted(async () => {
-  // 屏蔽浏览器右键菜单
-  document.oncontextmenu = (event) => {
-    event.preventDefault()
-  }
-  // 获取配置
-  store.config = await commands.getConfig()
-  // 如果username和password不为空，尝试登录
-  if (store.config.username !== '' && store.config.password !== '') {
-    const result = await commands.login(store.config.username, store.config.password)
-    if (result.status === 'error') {
-      console.error(result.error)
-      return
+async function initialize() {
+  startupError.value = ''
+  try {
+    const [config, platform] = await Promise.all([commands.getConfig(), commands.getRuntimePlatform()])
+    store.runtimePlatform = platform
+    store.config = config
+    if (config.username && config.password) {
+      const result = await commands.login(config.username, config.password)
+      if (result.status === 'ok') {
+        store.userProfile = result.data
+        message.success('自动登录成功')
+      }
     }
-    store.userProfile = result.data
-    message.success('自动登录成功')
+    const logs = await commands.getLogsDirSize()
+    if (logs.status === 'ok' && logs.data > 50 * 1024 * 1024)
+      notification.warning({ title: '日志超过 50 MB，可在日志设置中清理或关闭文件日志', duration: 6000 })
+  } catch (error) {
+    startupError.value = String(error)
   }
-})
-
-onMounted(async () => {
-  // 检查日志目录大小
-  const result = await commands.getLogsDirSize()
-  if (result.status === 'error') {
-    console.error(result.error)
-    return
-  }
-  if (result.data > 50 * 1024 * 1024) {
-    notification.warning({
-      title: '日志目录大小超过50MB，请及时清理日志文件',
-      description: () => (
-        <>
-          <div>
-            点击右上角的 <span class="bg-gray-2 px-1">日志</span> 按钮
-          </div>
-          <div>
-            里边有 <span class="bg-gray-2 px-1">打开日志目录</span> 按钮
-          </div>
-          <div>
-            你也可以在里边取消勾选 <span class="bg-gray-2 px-1">输出文件日志</span>
-          </div>
-          <div>这样将不再产生文件日志</div>
-        </>
-      ),
-    })
-  }
-})
-
-onMounted(() => {
-  const mediaQuery = window.matchMedia('(min-width: 768px)')
-  isDesktop.value = mediaQuery.matches
-  if (!isDesktop.value) {
-    mobileTab.value = store.currentTabName
-  }
-  mediaQuery.addEventListener('change', (e) => {
-    isDesktop.value = e.matches
-    if (!isDesktop.value) {
-      mobileTab.value = store.currentTabName
-    }
-  })
-})
+}
+onMounted(initialize)
 </script>
-
 <template>
-  <div v-if="store.config !== undefined" class="h-[100svh] flex flex-col overflow-hidden">
-    <!-- Mobile top bar: action buttons + avatar -->
-    <div v-if="!isDesktop" class="flex items-center gap-1 px-2 py-1.5 shrink-0 border-b border-gray-200">
-      <n-button type="primary" @click="loginDialogShowing = true" size="small">
-        <template #icon>
-          <n-icon><PhUser /></n-icon>
-        </template>
-        登录
-      </n-button>
-      <n-button @click="logViewerShowing = true" size="small">
-        <template #icon>
-          <n-icon size="20"><PhClockCounterClockwise /></n-icon>
-        </template>
-        日志
-      </n-button>
-      <n-button @click="aboutDialogShowing = true" size="small">
-        <template #icon>
-          <n-icon size="20"><PhInfo /></n-icon>
-        </template>
-        关于
-      </n-button>
-      <div v-if="store.userProfile !== undefined" class="flex items-center ml-auto overflow-hidden">
-        <n-avatar
-          class="flex-shrink-0"
-          round
-          :size="32"
-          :src="store.userProfile.photo"
-          fallback-src="https://cdn-msp.jmapiproxy2.cc/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
-        <span class="whitespace-nowrap text-ellipsis overflow-hidden" :title="store.userProfile.username">
-          {{ store.userProfile.username }}
-        </span>
+  <div v-if="store.config !== undefined" class="app-shell" :class="{ 'mobile-layout': isMobile }">
+    <header v-if="isMobile" class="mobile-header">
+      <button
+        v-if="store.mobileTab === 'chapter'"
+        class="header-icon"
+        aria-label="返回列表"
+        @click="navigate(lastBrowseTab)">
+        <PhCaretLeft :size="24" />
+      </button>
+      <span v-else class="brand-mark">JM</span>
+      <div class="header-heading">
+        <span class="header-eyebrow">阅读 · 收藏 · 下载</span>
+        <strong>{{ pageTitle }}</strong>
       </div>
-    </div>
-
-    <!-- Desktop layout: two columns (UNCHANGED from original) -->
+      <button class="header-icon" aria-label="账号登录" @click="loginDialogShowing = true">
+        <PhUser :size="23" />
+      </button>
+      <n-dropdown
+        trigger="click"
+        :options="[
+          { label: '设置', key: 'settings' },
+          { label: '运行日志', key: 'logs' },
+          { label: '关于', key: 'about' },
+        ]"
+        @select="(key: string) => { if (key === 'settings') settingsShowing = true; else if (key === 'logs') logViewerShowing = true; else aboutDialogShowing = true }">
+        <button class="header-icon" aria-label="更多选项"><PhGearSix :size="23" /></button>
+      </n-dropdown>
+    </header>
     <div v-if="isDesktop" class="flex-1 min-h-0 flex overflow-hidden">
       <n-tabs class="h-full w-1/2" v-model:value="store.currentTabName" type="line" size="small" animated>
         <n-tab-pane class="h-full overflow-auto p-0!" name="search" tab="搜索" display-directive="show">
@@ -228,7 +223,7 @@ onMounted(() => {
               round
               :size="32"
               :src="store.userProfile.photo"
-          fallback-src="https://cdn-msp.jmapiproxy2.cc/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
+              fallback-src="https://cdn-msp.jmapiproxy2.cc/templates/frontend/airav/img/title-png/more-ms-jm.webp?v=2" />
             <span class="whitespace-nowrap text-ellipsis overflow-hidden" :title="store.userProfile.username">
               {{ store.userProfile.username }}
             </span>
@@ -238,60 +233,56 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Mobile layout: single column + bottom tab bar -->
-    <div v-else class="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <div class="flex-1 min-h-0 overflow-auto">
-        <div v-show="mobileTab === 'search'" class="flex-1 min-h-0 flex flex-col">
-          <SearchPane />
-        </div>
-        <div v-show="mobileTab === 'favorite'" class="flex-1 min-h-0 flex flex-col">
-          <FavoritePane />
-        </div>
-        <div v-show="mobileTab === 'weekly'" class="flex-1 min-h-0 flex flex-col">
-          <WeeklyPane />
-        </div>
-        <div v-show="mobileTab === 'downloaded'" class="flex-1 min-h-0 flex flex-col">
-          <DownloadedPane />
-        </div>
-        <div v-show="mobileTab === 'chapter'" class="flex-1 min-h-0 flex flex-col">
-          <ChapterPane />
-        </div>
-        <div v-show="mobileTab === 'progresses'" class="flex-1 min-h-0 flex flex-col">
-          <ProgressesPane />
-        </div>
+    <div v-else class="mobile-main">
+      <div
+        v-if="store.mobileTab === 'search' || store.mobileTab === 'weekly'"
+        class="discover-switch"
+        aria-label="发现分类">
+        <button :class="{ active: store.mobileTab === 'search' }" @click="navigate('search')">搜索</button>
+        <button :class="{ active: store.mobileTab === 'weekly' }" @click="navigate('weekly')">每周必看</button>
       </div>
-      <!-- Bottom tab bar: use pb-safe for iOS home indicator -->
-      <div class="flex items-stretch justify-around border-t border-gray-200 bg-white shrink-0"
-           :style="{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }">
-        <button
-          v-for="tab in mobileTabs"
-          :key="tab.value"
-          class="flex flex-col items-center justify-center flex-1 py-1.5 gap-0.5 text-xs transition-colors duration-200 cursor-pointer border-none bg-transparent"
-          :class="mobileTab === tab.value ? 'text-blue-500' : 'text-gray-500'"
-          @click="mobileTab = tab.value">
-          <n-icon :size="20"><component :is="tab.icon" /></n-icon>
-          <span class="leading-tight">{{ tab.label }}</span>
-        </button>
-      </div>
+      <div v-show="store.mobileTab === 'search'" class="mobile-pane"><SearchPane /></div>
+      <div v-show="store.mobileTab === 'weekly'" class="mobile-pane"><WeeklyPane /></div>
+      <div v-show="store.mobileTab === 'favorite'" class="mobile-pane"><FavoritePane /></div>
+      <div v-show="store.mobileTab === 'downloaded'" class="mobile-pane"><DownloadedPane /></div>
+      <div v-show="store.mobileTab === 'chapter'" class="mobile-pane"><ChapterPane /></div>
+      <div v-show="store.mobileTab === 'progresses'" class="mobile-pane"><ProgressesPane /></div>
     </div>
-
-    <!-- Dialogs -->
+    <nav v-if="isMobile" class="mobile-nav" aria-label="主导航">
+      <button
+        v-for="tab in mobileTabs"
+        :key="tab.value"
+        :class="{ active: activeMobileTab === tab.value }"
+        :aria-current="activeMobileTab === tab.value ? 'page' : undefined"
+        @click="navigate(tab.value)">
+        <span class="nav-icon">
+          <component :is="tab.icon" :size="23" />
+          <span v-if="tab.value === 'progresses' && activeDownloads" class="nav-badge">{{ activeDownloads }}</span>
+        </span>
+        <span>{{ tab.label }}</span>
+      </button>
+    </nav>
     <LoginDialog v-model:showing="loginDialogShowing" />
     <AboutDialog v-model:showing="aboutDialogShowing" />
     <LogDialog v-model:showing="logViewerShowing" />
+    <SettingsDialog v-model:showing="settingsShowing" />
+  </div>
+  <div v-else class="startup-state">
+    <template v-if="startupError">
+      <p>启动失败：{{ startupError }}</p>
+      <n-button @click="initialize">重试</n-button>
+    </template>
+    <template v-else>
+      <n-spin />
+      <p>正在加载…</p>
+    </template>
   </div>
 </template>
-
 <style scoped>
 :global(.n-notification-main__header) {
-  @apply break-words;
+  overflow-wrap: anywhere;
 }
-
-:global(.n-tabs-pane-wrapper) {
-  @apply h-full;
-}
-
 :deep(.n-tabs-nav) {
-  @apply px-2;
+  padding: 0 8px;
 }
 </style>

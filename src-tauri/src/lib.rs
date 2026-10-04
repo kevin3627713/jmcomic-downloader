@@ -57,6 +57,9 @@ pub fn run() {
             export_cbz,
             export_pdf,
             get_comic_pdf_path,
+            get_comic_cbz_paths,
+            open_exported_files,
+            get_runtime_platform,
             get_logs_dir_size,
             get_synced_comic,
             get_synced_comic_in_favorite,
@@ -85,7 +88,10 @@ pub fn run() {
         )
         .expect("Failed to export typescript bindings");
 
-    tauri::Builder::default()
+    let app_builder = tauri::Builder::default();
+    #[cfg(target_os = "ios")]
+    let app_builder = app_builder.plugin(tauri_plugin_file_actions::init());
+    app_builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(builder.invoke_handler())

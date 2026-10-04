@@ -1,10 +1,14 @@
 <script setup lang="tsx">
+import { useEventSubscriptions } from '../../../composables/useEventSubscriptions'
 import { events } from '../../../bindings.ts'
 import { onMounted, ref, watchEffect, nextTick } from 'vue'
 import { NIcon, DropdownOption } from 'naive-ui'
 import { PhChecks, PhTrash } from '@phosphor-icons/vue'
 import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import ExportProgress from './ExportProgress.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
+const subscribe = useEventSubscriptions()
+const isMobile = useIsMobile()
 
 type ProgressState = 'Processing' | 'Error' | 'End'
 
@@ -18,6 +22,7 @@ export interface ProgressData {
   percentage: number
   indicator: string
   chapterExportDir?: string
+  merged?: boolean
 }
 
 const selectedIds = ref<Set<string>>(new Set())
@@ -37,117 +42,122 @@ watchEffect(() => {
 
 // 处理导出CBZ事件
 async function handleExportCbzEvents() {
-  await events.exportCbzEvent.listen(async ({ payload: exportEvent }) => {
-    if (exportEvent.event === 'Start') {
-      const { uuid, comicTitle, total } = exportEvent.data
-      progresses.value.set(uuid, {
-        uuid,
-        exportType: 'cbz',
-        state: 'Processing',
-        comicTitle,
-        current: 0,
-        total,
-        percentage: 0,
-        indicator: 'CBZ创建CBZ中',
-      })
-    } else if (exportEvent.event === 'Progress') {
-      const { uuid, current } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'Processing'
-        progressData.current = current
-        progressData.percentage = (current / progressData.total) * 100
-        progressData.indicator = `CBZ创建中 ${current}/${progressData.total}`
+  await subscribe(
+    events.exportCbzEvent.listen(async ({ payload: exportEvent }) => {
+      if (exportEvent.event === 'Start') {
+        const { uuid, comicTitle, total } = exportEvent.data
+        progresses.value.set(uuid, {
+          uuid,
+          exportType: 'cbz',
+          state: 'Processing',
+          comicTitle,
+          current: 0,
+          total,
+          percentage: 0,
+          indicator: 'CBZ创建CBZ中',
+        })
+      } else if (exportEvent.event === 'Progress') {
+        const { uuid, current } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'Processing'
+          progressData.current = current
+          progressData.percentage = (current / progressData.total) * 100
+          progressData.indicator = `CBZ创建中 ${current}/${progressData.total}`
+        }
+      } else if (exportEvent.event === 'Error') {
+        const { uuid } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'Error'
+          progressData.indicator = 'CBZ创建失败'
+        }
+      } else if (exportEvent.event === 'End') {
+        const { uuid, chapterExportDir } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'End'
+          progressData.chapterExportDir = chapterExportDir
+          progressData.indicator = 'CBZ创建完成'
+        }
       }
-    } else if (exportEvent.event === 'Error') {
-      const { uuid } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'Error'
-        progressData.indicator = 'CBZ创建失败'
-      }
-    } else if (exportEvent.event === 'End') {
-      const { uuid, chapterExportDir } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'End'
-        progressData.chapterExportDir = chapterExportDir
-        progressData.indicator = 'CBZ创建完成'
-      }
-    }
-  })
+    }),
+  )
 }
 
 // 处理导出PDF事件
 async function handleExportPdfEvents() {
-  await events.exportPdfEvent.listen(async ({ payload: exportEvent }) => {
-    if (exportEvent.event === 'CreateStart') {
-      const { uuid, comicTitle, total } = exportEvent.data
-      progresses.value.set(uuid, {
-        uuid,
-        exportType: 'pdf',
-        state: 'Processing',
-        comicTitle,
-        current: 0,
-        total,
-        percentage: 0,
-        indicator: 'PDF创建中',
-      })
-    } else if (exportEvent.event === 'CreateProgress') {
-      const { uuid, current } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'Processing'
-        progressData.current = current
-        progressData.percentage = (current / progressData.total) * 100
-        progressData.indicator = `PDF创建中 ${current}/${progressData.total}`
+  await subscribe(
+    events.exportPdfEvent.listen(async ({ payload: exportEvent }) => {
+      if (exportEvent.event === 'CreateStart') {
+        const { uuid, comicTitle, total } = exportEvent.data
+        progresses.value.set(uuid, {
+          uuid,
+          exportType: 'pdf',
+          state: 'Processing',
+          comicTitle,
+          current: 0,
+          total,
+          percentage: 0,
+          indicator: 'PDF创建中',
+        })
+      } else if (exportEvent.event === 'CreateProgress') {
+        const { uuid, current } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'Processing'
+          progressData.current = current
+          progressData.percentage = (current / progressData.total) * 100
+          progressData.indicator = `PDF创建中 ${current}/${progressData.total}`
+        }
+      } else if (exportEvent.event === 'CreateError') {
+        const { uuid } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'Error'
+          progressData.indicator = '创建PDF失败'
+        }
+      } else if (exportEvent.event === 'CreateEnd') {
+        const { uuid, chapterExportDir } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'End'
+          progressData.chapterExportDir = chapterExportDir
+          progressData.indicator = 'PDF创建完成'
+        }
+      } else if (exportEvent.event === 'MergeStart') {
+        const { uuid, comicTitle } = exportEvent.data
+        progresses.value.set(uuid, {
+          uuid,
+          exportType: 'pdf',
+          state: 'Processing',
+          comicTitle,
+          current: 0,
+          total: 1,
+          percentage: 0,
+          indicator: 'PDF合并中',
+        })
+      } else if (exportEvent.event === 'MergeError') {
+        const { uuid } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'Error'
+          progressData.indicator = 'PDF合并失败'
+        }
+      } else if (exportEvent.event === 'MergeEnd') {
+        const { uuid, chapterExportDir } = exportEvent.data
+        const progressData = progresses.value.get(uuid)
+        if (progressData !== undefined) {
+          progressData.state = 'End'
+          progressData.current = progressData.total
+          progressData.percentage = 100
+          progressData.chapterExportDir = chapterExportDir
+          progressData.indicator = 'PDF合并完成'
+          progressData.merged = true
+        }
       }
-    } else if (exportEvent.event === 'CreateError') {
-      const { uuid } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'Error'
-        progressData.indicator = '创建PDF失败'
-      }
-    } else if (exportEvent.event === 'CreateEnd') {
-      const { uuid, chapterExportDir } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'End'
-        progressData.chapterExportDir = chapterExportDir
-        progressData.indicator = 'PDF创建完成'
-      }
-    } else if (exportEvent.event === 'MergeStart') {
-      const { uuid, comicTitle } = exportEvent.data
-      progresses.value.set(uuid, {
-        uuid,
-        exportType: 'pdf',
-        state: 'Processing',
-        comicTitle,
-        current: 0,
-        total: 1,
-        percentage: 0,
-        indicator: 'PDF合并中',
-      })
-    } else if (exportEvent.event === 'MergeError') {
-      const { uuid } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'Error'
-        progressData.indicator = 'PDF合并失败'
-      }
-    } else if (exportEvent.event === 'MergeEnd') {
-      const { uuid, chapterExportDir } = exportEvent.data
-      const progressData = progresses.value.get(uuid)
-      if (progressData !== undefined) {
-        progressData.state = 'End'
-        progressData.current = progressData.total
-        progressData.percentage = 100
-        progressData.chapterExportDir = chapterExportDir
-        progressData.indicator = 'PDF合并完成'
-      }
-    }
-  })
+    }),
+  )
 }
 
 // 监听导出事件
@@ -243,16 +253,20 @@ function useDropdown() {
 </script>
 
 <template>
-  <SelectionArea
+  <component
+    :is="isMobile ? 'div' : SelectionArea"
     class="h-full flex flex-col selection-container px-2"
     :options="{ selectables: '.selectable', features: { deselectOnBlur: true } }"
-    @contextmenu="showDropdown"
+    @contextmenu="!isMobile && showDropdown($event)"
     @move="updateSelectedIds"
     @start="unselectAll">
-    <div class="flex">
+    <div v-if="!isMobile" class="flex">
       <span class="ml-auto animate-pulse text-red">左键拖动进行框选，右键打开菜单</span>
     </div>
 
+    <div v-if="!progresses.size" class="empty-state">
+      <n-empty description="尚无导出任务，在书库或章节详情中导出" />
+    </div>
     <ExportProgress
       v-for="[uuid, p] in progresses"
       :key="uuid"
@@ -269,7 +283,7 @@ function useDropdown() {
       :options="dropdownOptions"
       :show="dropdownShowing"
       :on-clickoutside="() => (dropdownShowing = false)" />
-  </SelectionArea>
+  </component>
 </template>
 
 <style scoped>

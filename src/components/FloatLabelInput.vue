@@ -45,6 +45,7 @@ defineExpose({ NInputRef })
     :size="size"
     :type="type"
     :clearable="clearable"
+    :input-props="{ 'aria-label': label }"
     placeholder=""
     v-model:value="value"
     @focus="focused = true"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { useEventSubscriptions } from '../../composables/useEventSubscriptions'
 import { onMounted, ref } from 'vue'
-import { commands, events } from '../../bindings.ts'
+import { commands, events, type Comic } from '../../bindings.ts'
 import { open } from '@tauri-apps/plugin-dialog'
 import { PhFolderOpen, PhGearSix } from '@phosphor-icons/vue'
 import { useStore } from '../../store.ts'
@@ -14,6 +15,7 @@ import { useIsMobile } from '../../composables/useIsMobile'
 export type ProgressesPaneTabName = 'uncompleted' | 'completed' | 'export'
 
 const store = useStore()
+const subscribe = useEventSubscriptions()
 const isMobile = useIsMobile()
 
 const settingsDialogShowing = ref<boolean>(false)
@@ -21,81 +23,115 @@ const settingsDialogShowing = ref<boolean>(false)
 const downloadSpeed = ref<string>('')
 
 onMounted(async () => {
-  await events.downloadSpeedEvent.listen(async ({ payload: { speed } }) => {
-    downloadSpeed.value = speed
-  })
+  await subscribe(
+    events.downloadSpeedEvent.listen(async ({ payload: { speed } }) => {
+      downloadSpeed.value = speed
+    }),
+  )
 
-  await events.downloadSleepingEvent.listen(async ({ payload: { id, remainingSec } }) => {
-    const progressData = store.progresses.get(id)
-    if (progressData !== undefined) {
-      progressData.indicator = `将在${remainingSec}秒后继续下载`
-    }
-  })
-
-  await events.downloadTaskEvent.listen(async ({ payload: { event, data } }) => {
-    if (event === 'Create') {
-      const { chapterInfo, downloadedImgCount, totalImgCount } = data
-
-      store.progresses.set(chapterInfo.chapterId, {
-        ...data,
-        percentage: 0,
-        indicator: `排队中 ${downloadedImgCount}/${totalImgCount}`,
-      })
-    } else if (event === 'Update') {
-      const { chapterId, state, downloadedImgCount, totalImgCount } = data
-
-      const progressData = store.progresses.get(chapterId)
-      if (progressData === undefined) {
-        return
+  await subscribe(
+    events.downloadSleepingEvent.listen(async ({ payload: { id, remainingSec } }) => {
+      const progressData = store.progresses.get(id)
+      if (progressData !== undefined) {
+        progressData.indicator = `将在${remainingSec}秒后继续下载`
       }
+    }),
+  )
 
-      progressData.state = state
-      progressData.downloadedImgCount = downloadedImgCount
-      progressData.totalImgCount = totalImgCount
+  await subscribe(
+    events.downloadTaskEvent.listen(async ({ payload: { event, data } }) => {
+      if (event === 'Create') {
+        const { chapterInfo, downloadedImgCount, totalImgCount } = data
 
-      if (state === 'Completed') {
-        progressData.chapterInfo.isDownloaded = true
-        await syncPickedComic()
-        await syncComicInSearch(progressData)
-        await syncComicInFavorite(progressData)
-        await syncComicInWeekly(progressData)
+        store.progresses.set(chapterInfo.chapterId, {
+          ...data,
+          percentage: totalImgCount ? Math.min(100, (downloadedImgCount / totalImgCount) * 100) : 0,
+          indicator: `${data.state === 'Downloading' ? '下载中' : '排队中'} ${downloadedImgCount}/${totalImgCount}`,
+        })
+      } else if (event === 'Update') {
+        const { chapterId, state, downloadedImgCount, totalImgCount } = data
+
+        const progressData = store.progresses.get(chapterId)
+        if (progressData === undefined) {
+          return
+        }
+
+        progressData.state = state
+        progressData.downloadedImgCount = downloadedImgCount
+        progressData.totalImgCount = totalImgCount
+
+        if (state === 'Completed') {
+          progressData.chapterInfo.isDownloaded = true
+          progressData.chapterInfo.pageCount = totalImgCount
+          // Completed is emitted only after the files and completion marker are saved.
+          // Apply it synchronously before any background refresh can yield to a click.
+          applyCompletedChapters(progressData.comic)
+          if (store.pickedComic) applyCompletedChapters(store.pickedComic)
+        }
+
+        progressData.percentage = totalImgCount ? Math.min(100, (downloadedImgCount / totalImgCount) * 100) : 0
+
+        let indicator = ''
+        if (state === 'Pending') {
+          indicator = `排队中`
+        } else if (state === 'Downloading') {
+          indicator = `下载中`
+        } else if (state === 'Paused') {
+          indicator = `已暂停`
+        } else if (state === 'Cancelled') {
+          indicator = `已取消`
+        } else if (state === 'Completed') {
+          indicator = `下载完成`
+        } else if (state === 'Failed') {
+          indicator = `下载失败`
+        }
+        if (totalImgCount !== 0) {
+          indicator += ` ${downloadedImgCount}/${totalImgCount}`
+        }
+
+        progressData.indicator = indicator
+
+        if (state === 'Completed') {
+          // Slow or failed list refreshes must not delay the completed indicator.
+          const refreshes = await Promise.allSettled([
+            syncPickedComic(progressData),
+            syncComicInSearch(progressData),
+            syncComicInFavorite(progressData),
+            syncComicInWeekly(progressData),
+          ])
+          for (const refresh of refreshes) {
+            if (refresh.status === 'rejected') console.error('刷新已完成下载的状态失败', refresh.reason)
+          }
+        }
       }
-
-      progressData.percentage = (downloadedImgCount / totalImgCount) * 100
-
-      let indicator = ''
-      if (state === 'Pending') {
-        indicator = `排队中`
-      } else if (state === 'Downloading') {
-        indicator = `下载中`
-      } else if (state === 'Paused') {
-        indicator = `已暂停`
-      } else if (state === 'Cancelled') {
-        indicator = `已取消`
-      } else if (state === 'Completed') {
-        indicator = `下载完成`
-      } else if (state === 'Failed') {
-        indicator = `下载失败`
-      }
-      if (totalImgCount !== 0) {
-        indicator += ` ${downloadedImgCount}/${totalImgCount}`
-      }
-
-      progressData.indicator = indicator
-    }
-  })
+    }),
+  )
 })
 
-async function syncPickedComic() {
-  if (store.pickedComic === undefined) {
+function applyCompletedChapters(comic: Comic): Comic {
+  for (const progress of store.progresses.values()) {
+    if (progress.state !== 'Completed' || progress.comic.id !== comic.id) continue
+    const chapter = comic.chapterInfos.find((chapter) => chapter.chapterId === progress.chapterInfo.chapterId)
+    if (!chapter) continue
+    Object.assign(chapter, progress.chapterInfo, { isDownloaded: true, pageCount: progress.totalImgCount })
+    comic.isDownloaded = true
+    if (progress.comic.comicDownloadDir) comic.comicDownloadDir = progress.comic.comicDownloadDir
+  }
+  return comic
+}
+
+async function syncPickedComic(progressData: ProgressData) {
+  const comic = store.pickedComic
+  if (comic === undefined || comic.id !== progressData.comic.id) {
     return
   }
-  const result = await commands.getSyncedComic(store.pickedComic)
+  const result = await commands.getSyncedComic(comic)
   if (result.status === 'error') {
     console.error(result.error)
     return
   }
-  store.pickedComic = result.data
+  // The user may have opened another comic while this request was in flight.
+  if (store.pickedComic === comic) store.pickedComic = applyCompletedChapters(result.data)
 }
 
 async function syncComicInSearch(progressData: ProgressData) {
@@ -171,9 +207,9 @@ async function selectDownloadDir() {
 </script>
 
 <template>
-  <div v-if="store.config !== undefined" class="flex flex-col flex-1 min-h-0 overflow-auto">
-    <div class="flex gap-1 box-border px-2 pt-2.5">
-      <n-input-group class="">
+  <div v-if="store.config !== undefined" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div class="pane-toolbar flex gap-2 box-border px-4 pt-3">
+      <n-input-group v-if="store.runtimePlatform !== 'ios'" class="min-w-0 flex-1">
         <n-input-group-label size="small">下载目录</n-input-group-label>
         <n-input v-model:value="store.config.downloadDir" size="small" readonly @click="selectDownloadDir" />
         <n-button v-if="!isMobile" class="w-10" size="small" @click="showDownloadDirInFileManager">
@@ -193,7 +229,7 @@ async function selectDownloadDir() {
         配置
       </n-button>
     </div>
-    <n-tabs class="h-full overflow-auto" v-model:value="store.progressesPaneTabName" type="line" size="small">
+    <n-tabs class="flex-1 min-h-0 overflow-hidden" v-model:value="store.progressesPaneTabName" type="line" size="small">
       <n-tab-pane class="h-full p-0! overflow-auto" name="uncompleted" tab="未完成">
         <UncompletedProgresses />
       </n-tab-pane>

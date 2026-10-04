@@ -12,6 +12,8 @@
 
 # 🖥️ 图形界面
 
+本分支的手机布局、iOS 文件预览与分享、导出完整性修复和验证方法，见 [手机界面与导出修复](docs/mobile-and-export.md)。
+
 ![image](https://github.com/user-attachments/assets/2ec6e5f9-a211-4325-8671-0a15f4bcba6c)
 
 # 📖 使用方法

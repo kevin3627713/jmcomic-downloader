@@ -261,6 +261,17 @@ impl DownloadTask {
         let Some(urls_with_block_num) = self.get_urls_with_block_num(chapter_id).await else {
             return;
         };
+        if urls_with_block_num.is_empty() {
+            tracing::error!(
+                err_title = "章节下载失败",
+                comic_title,
+                chapter_title,
+                message = "服务器返回了空的图片列表"
+            );
+            self.set_state(DownloadTaskState::Failed);
+            self.emit_download_task_update_event();
+            return;
+        }
         // 记录总共需要下载的图片数量
         #[allow(clippy::cast_possible_truncation)]
         self.total_img_count
@@ -270,14 +281,15 @@ impl DownloadTask {
             return;
         };
         // 清理临时下载目录中与`config.download_format`对不上的文件
-        self.clean_temp_download_dir(&temp_download_dir);
+        let download_format = self.app.get_config().read().download_format;
+        self.clean_temp_download_dir(&temp_download_dir, download_format);
 
         let mut join_set = JoinSet::new();
         for (i, (url, block_num)) in urls_with_block_num.into_iter().enumerate() {
             // 创建下载任务
             let temp_download_dir = temp_download_dir.clone();
             let download_img_task =
-                DownloadImgTask::new(self, url, i, temp_download_dir, block_num);
+                DownloadImgTask::new(self, url, i, temp_download_dir, block_num, download_format);
             join_set.spawn(download_img_task.process());
         }
         join_set.join_all().await;
@@ -309,10 +321,15 @@ impl DownloadTask {
             return;
         }
 
-        if let Err(err) = self.chapter_info.save_chapter_metadata() {
+        let mut completed_chapter = self.chapter_info.as_ref().clone();
+        completed_chapter.page_count = Some(total_img_count);
+        if let Err(err) = completed_chapter.save_chapter_metadata() {
             let err_title = format!("`{comic_title} - {chapter_title}`保存元数据失败");
             let string_chain = err.to_string_chain();
             tracing::error!(err_title, message = string_chain);
+            self.set_state(DownloadTaskState::Failed);
+            self.emit_download_task_update_event();
+            return;
         }
 
         self.sleep_between_chapter().await;
@@ -439,27 +456,19 @@ impl DownloadTask {
                 return None;
             }
         };
-        // 构造图片下载链接
-        let urls_with_block_num: Vec<(String, u32)> = chapter_resp_data
-            .images
-            .into_iter()
-            .filter_map(|filename| {
-                let file_path = Path::new(&filename);
-                let ext = file_path.extension()?.to_str()?.to_lowercase();
-                // Use random CDN domain from the list
-                let img_domain = IMAGE_DOMAIN_LIST[fastrand::usize(0..IMAGE_DOMAIN_LIST.len())];
-                let url = format!("https://{img_domain}/media/photos/{chapter_id}/{filename}");
-                if ext == "gif" {
-                    return Some((url, 0));
-                } else if ext != "webp" {
-                    return None;
-                }
-
-                let filename_without_ext = file_path.file_stem()?.to_str()?;
-                let block_num = calculate_block_num(scramble_id, chapter_id, filename_without_ext);
-                Some((url, block_num))
-            })
-            .collect();
+        let urls_with_block_num =
+            build_image_urls(scramble_id, chapter_id, chapter_resp_data.images)
+                .map_err(|err| {
+                    tracing::error!(
+                        err_title = "获取图片链接失败",
+                        comic_title,
+                        chapter_title,
+                        message = err.to_string_chain()
+                    );
+                    self.set_state(DownloadTaskState::Failed);
+                    self.emit_download_task_update_event();
+                })
+                .ok()?;
 
         tracing::trace!(comic_title, chapter_title, "获取图片链接成功");
 
@@ -467,7 +476,7 @@ impl DownloadTask {
     }
 
     /// 删除临时下载目录中与`config.download_format`对不上的文件
-    fn clean_temp_download_dir(&self, temp_download_dir: &Path) {
+    fn clean_temp_download_dir(&self, temp_download_dir: &Path, download_format: DownloadFormat) {
         let comic_title = &self.comic.name;
         let chapter_title = &self.chapter_info.chapter_title;
 
@@ -484,7 +493,6 @@ impl DownloadTask {
             }
         };
 
-        let download_format = self.app.get_config().read().download_format;
         let extension = download_format.extension();
         for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
             // path有扩展名，且能转换为utf8，并与`config.download_format`一致或是gif，则保留
@@ -648,6 +656,7 @@ struct DownloadImgTask {
     index: usize,
     temp_download_path: PathBuf,
     block_num: u32,
+    download_format: DownloadFormat,
 }
 
 impl DownloadImgTask {
@@ -657,6 +666,7 @@ impl DownloadImgTask {
         index: usize,
         temp_download_path: PathBuf,
         block_num: u32,
+        download_format: DownloadFormat,
     ) -> Self {
         Self {
             app: download_task.app.clone(),
@@ -666,6 +676,7 @@ impl DownloadImgTask {
             index,
             temp_download_path,
             block_num,
+            download_format,
         }
     }
 
@@ -704,13 +715,16 @@ impl DownloadImgTask {
         let temp_download_path = &self.temp_download_path;
 
         let index_filename = format!("{:04}", self.index + 1);
-        let download_format = self.app.get_config().read().download_format;
+        let download_format = self.download_format;
         let ext = download_format.extension();
 
         let user_format_path = temp_download_path.join(format!("{index_filename}.{ext}"));
         let gif_path = temp_download_path.join(format!("{index_filename}.gif"));
 
-        if user_format_path.exists() || gif_path.exists() {
+        let existing_image = [&user_format_path, &gif_path]
+            .into_iter()
+            .any(|path| path.is_file() && image::open(path).is_ok());
+        if existing_image {
             // 如果图片已经存在，直接返回
             self.download_task
                 .downloaded_img_count
@@ -836,6 +850,41 @@ impl DownloadImgTask {
     }
 }
 
+fn build_image_urls(
+    scramble_id: i64,
+    chapter_id: i64,
+    filenames: Vec<String>,
+) -> anyhow::Result<Vec<(String, u32)>> {
+    anyhow::ensure!(!filenames.is_empty(), "服务器返回了空的图片列表");
+    filenames
+        .into_iter()
+        .map(|filename| {
+            let path = Path::new(&filename);
+            let ext = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .context(format!("图片文件名没有有效扩展名: {filename}"))?
+                .to_ascii_lowercase();
+            anyhow::ensure!(
+                matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif"),
+                "不支持的图片格式: {filename}，无法保证完整下载"
+            );
+            let domain = IMAGE_DOMAIN_LIST[fastrand::usize(0..IMAGE_DOMAIN_LIST.len())];
+            let url = format!("https://{domain}/media/photos/{chapter_id}/{filename}");
+            let stem = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .context("图片文件名无效")?;
+            let blocks = if ext == "gif" {
+                0
+            } else {
+                calculate_block_num(scramble_id, chapter_id, stem)
+            };
+            Ok((url, blocks))
+        })
+        .collect()
+}
+
 fn calculate_block_num(scramble_id: i64, id: i64, filename: &str) -> u32 {
     if id < scramble_id {
         0
@@ -862,7 +911,8 @@ async fn save_img(
     // TODO: 如果src_format是WebP，download_format也是WebP，且block_num为0，也可以直接保存
     if src_format == ImageFormat::Gif {
         // 如果是GIF格式，直接保存
-        std::fs::write(save_path, src_img_data)
+        image::load_from_memory(&src_img_data).context("GIF 数据不完整或已损坏")?;
+        utils::write_atomic(save_path, &src_img_data)
             .context(format!("保存图片`{}`失败", save_path.display()))?;
         return Ok(());
     }
@@ -899,7 +949,7 @@ async fn save_img(
             }
         }
         // 保存编码后的图片数据
-        std::fs::write(&save_path, dst_img_data)
+        utils::write_atomic(&save_path, &dst_img_data)
             .context(format!("保存图片`{}`失败", save_path.display()))?;
         Ok(())
     };
@@ -1079,5 +1129,44 @@ impl ChapterInfo {
 
         let temp_download_dir = parent.join(format!(".下载中-{chapter_download_dir_name}"));
         Ok(temp_download_dir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_manifest_keeps_all_supported_pages() {
+        let filenames = ["001.jpg", "002.jpeg", "003.PNG", "004.webp", "005.gif"];
+        let urls = build_image_urls(1, 500_000, filenames.map(str::to_owned).to_vec()).unwrap();
+        assert_eq!(urls.len(), 5);
+        for ((url, _), name) in urls.iter().zip(filenames) {
+            assert!(url.ends_with(name));
+        }
+        assert_eq!(urls[4].1, 0);
+    }
+
+    #[test]
+    fn image_manifest_rejects_empty_or_unsupported_pages() {
+        assert!(build_image_urls(1, 10, vec![]).is_err());
+        assert!(build_image_urls(1, 10, vec!["001.webp".into(), "002.avif".into()]).is_err());
+    }
+
+    #[tokio::test]
+    async fn image_save_does_not_replace_a_good_file_with_corrupt_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0001.jpg");
+        std::fs::write(&path, b"previous file").unwrap();
+        assert!(save_img(
+            &path,
+            DownloadFormat::Jpeg,
+            0,
+            Bytes::from_static(b"corrupt"),
+            ImageFormat::Jpeg
+        )
+        .await
+        .is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"previous file");
     }
 }

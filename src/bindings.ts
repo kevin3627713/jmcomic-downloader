@@ -5,6 +5,16 @@
 
 
 export const commands = {
+async getRuntimePlatform(): Promise<string> { return await TAURI_INVOKE("get_runtime_platform"); },
+async getComicCbzPaths(comic: Comic): Promise<Result<string[], CommandError>> {
+  try { return { status: "ok", data: await TAURI_INVOKE("get_comic_cbz_paths", { comic }) }; }
+  catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
+async openExportedFiles(paths: string[], preview: boolean): Promise<Result<null, CommandError>> {
+  try { return { status: "ok", data: await TAURI_INVOKE("open_exported_files", { paths, preview }) }; }
+  catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
+
 async greet(name: string) : Promise<string> {
     return await TAURI_INVOKE("greet", { name });
 },
@@ -251,7 +261,7 @@ export type CategoryInWeeklyInfo = { id: string; title: string; time: string }
 export type CategoryRespData = { id: string | null; title: string | null }
 export type CategorySub = { id: string | null; title: string | null }
 export type CategorySubRespData = { id: string | null; title: string | null }
-export type ChapterInfo = { chapterId: number; chapterTitle: string; order: number; isDownloaded?: boolean | null; chapterDownloadDir?: string | null }
+export type ChapterInfo = { chapterId: number; chapterTitle: string; order: number; pageCount?: number | null; isDownloaded?: boolean | null; chapterDownloadDir?: string | null }
 export type Comic = { id: number; name: string; addtime: string; description: string; total_views: string; likes: string; chapterInfos: ChapterInfo[]; series_id: string; comment_total: string; author: string[]; tags: string[]; works: string[]; actors: string[]; related_list: RelatedListRespData[]; liked: boolean; is_favorite: boolean; is_aids: boolean; isDownloaded?: boolean | null; comicDownloadDir?: string | null }
 export type ComicInFavorite = { id: number; author: string; description: string | null; name: string; latestEp: string | null; latestEpAid: string | null; image: string; category: CategoryRespData; categorySub: CategorySubRespData; isDownloaded: boolean; comicDownloadDir: string }
 export type ComicInSearch = { id: number; author: string; name: string; image: string; category: CategoryRespData; categorySub: CategorySubRespData; liked: boolean; isFavorite: boolean; updateAt: number; isDownloaded: boolean; comicDownloadDir: string }

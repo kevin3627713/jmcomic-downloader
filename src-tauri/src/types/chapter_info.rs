@@ -10,6 +10,9 @@ pub struct ChapterInfo {
     pub chapter_id: i64,
     pub chapter_title: String,
     pub order: i64,
+    /// Older downloads have no page count; new downloads use it to detect missing pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_downloaded: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -54,7 +57,7 @@ impl ChapterInfo {
         let chapter_json =
             serde_json::to_string_pretty(&chapter_info).context("将ChapterInfo序列化为json失败")?;
 
-        std::fs::write(&metadata_path, chapter_json)
+        crate::utils::write_atomic(&metadata_path, chapter_json.as_bytes())
             .context(format!("写入文件`{}`失败", metadata_path.display()))?;
 
         Ok(())

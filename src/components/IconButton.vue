@@ -1,6 +1,5 @@
 <template>
-  <div
-    class="cursor-pointer p-1 rounded-lg flex items-center justify-between text-gray-6 hover:bg-orange hover:text-white active:bg-orange-5 active:text-white">
+  <button type="button" class="icon-button" :aria-label="String($attrs.title ?? '操作')">
     <slot />
-  </div>
+  </button>
 </template>

@@ -50,6 +50,64 @@ pub struct Comic {
     pub comic_download_dir: Option<PathBuf>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_comic(comic_dir: &Path) -> Comic {
+        Comic {
+            id: 1,
+            chapter_infos: vec![ChapterInfo {
+                chapter_id: 2,
+                chapter_title: "test chapter".into(),
+                order: 1,
+                page_count: None,
+                is_downloaded: Some(false),
+                chapter_download_dir: None,
+            }],
+            comic_download_dir: Some(comic_dir.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn disk_completion_refreshes_stale_chapter_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let chapter_dir = temp.path().join("chapter");
+        std::fs::create_dir(&chapter_dir).unwrap();
+        std::fs::write(
+            chapter_dir.join("章节元数据.json"),
+            br#"{"chapterId":2,"pageCount":51}"#,
+        )
+        .unwrap();
+        let mut comic = fixture_comic(temp.path());
+        comic
+            .update_fields(&HashMap::from([(1, temp.path().into())]))
+            .unwrap();
+        let chapter = &comic.chapter_infos[0];
+        assert_eq!(chapter.is_downloaded, Some(true));
+        assert_eq!(chapter.chapter_download_dir.as_ref(), Some(&chapter_dir));
+        assert_eq!(chapter.page_count, Some(51));
+    }
+
+    #[test]
+    fn missing_completion_marker_clears_stale_downloaded_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut comic = fixture_comic(temp.path());
+        let chapter = &mut comic.chapter_infos[0];
+        chapter.is_downloaded = Some(true);
+        chapter.chapter_download_dir = Some(temp.path().join("stale"));
+        chapter.page_count = Some(51);
+        comic
+            .update_fields(&HashMap::from([(1, temp.path().into())]))
+            .unwrap();
+        let chapter = &comic.chapter_infos[0];
+        assert_eq!(chapter.is_downloaded, Some(false));
+        assert_eq!(chapter.chapter_download_dir, None);
+        assert_eq!(chapter.page_count, None);
+    }
+}
+
 impl Comic {
     pub fn from_comic_resp_data(app: &AppHandle, comic: GetComicRespData) -> anyhow::Result<Comic> {
         let mut chapter_infos: Vec<ChapterInfo> = comic
@@ -69,6 +127,7 @@ impl Comic {
                     chapter_id,
                     chapter_title,
                     order,
+                    page_count: None,
                     is_downloaded: None,
                     chapter_download_dir: None,
                 };
@@ -81,6 +140,7 @@ impl Comic {
                 chapter_id: comic.id,
                 chapter_title: "第1话".to_owned(),
                 order: 1,
+                page_count: None,
                 is_downloaded: None,
                 chapter_download_dir: None,
             });
@@ -230,7 +290,7 @@ impl Comic {
 
         let comic_json = serde_json::to_string_pretty(&comic).context("将Comic序列化为json失败")?;
 
-        std::fs::write(&metadata_path, comic_json)
+        crate::utils::write_atomic(&metadata_path, comic_json.as_bytes())
             .context(format!("写入文件`{}`失败", metadata_path.display()))?;
 
         Ok(())
@@ -254,6 +314,12 @@ impl Comic {
 
         if !comic_download_dir.exists() {
             return Ok(());
+        }
+
+        for chapter in &mut self.chapter_infos {
+            chapter.is_downloaded = Some(false);
+            chapter.chapter_download_dir = None;
+            chapter.page_count = None;
         }
 
         for entry in WalkDir::new(comic_download_dir)
@@ -290,6 +356,10 @@ impl Comic {
                     .context(format!("`{}`没有父目录", metadata_path.display()))?;
                 chapter_info.chapter_download_dir = Some(parent.to_path_buf());
                 chapter_info.is_downloaded = Some(true);
+                chapter_info.page_count = chapter_json
+                    .get("pageCount")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|count| u32::try_from(count).ok());
             }
         }
         Ok(())

@@ -25,11 +25,8 @@ impl AnyhowErrorToStringChain for anyhow::Error {
 }
 
 pub trait PathIsImg {
-    /// 判断路径是否为图片(jpg/png/webp/gif)
+    /// 判断路径是否为图片(jpg/jpeg/png/webp/gif)
     fn is_img(&self) -> bool;
-
-    /// 判断路径是否为普通图片(jpg/png/webp)
-    fn is_common_img(&self) -> bool;
 }
 
 impl PathIsImg for std::path::Path {
@@ -37,14 +34,7 @@ impl PathIsImg for std::path::Path {
         self.extension()
             .and_then(|ext| ext.to_str())
             .map(str::to_lowercase)
-            .is_some_and(|ext| matches!(ext.as_str(), "jpg" | "png" | "webp" | "gif"))
-    }
-
-    fn is_common_img(&self) -> bool {
-        self.extension()
-            .and_then(|ext| ext.to_str())
-            .map(str::to_lowercase)
-            .is_some_and(|ext| matches!(ext.as_str(), "jpg" | "png" | "webp"))
+            .is_some_and(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif"))
     }
 }
 
@@ -77,19 +67,19 @@ impl WalkDirEntryExt for walkdir::DirEntry {
 }
 
 pub trait AppHandleExt {
-    fn get_config(&self) -> State<RwLock<Config>>;
-    fn get_jm_client(&self) -> State<JmClient>;
-    fn get_download_manager(&self) -> State<DownloadManager>;
+    fn get_config(&self) -> State<'_, RwLock<Config>>;
+    fn get_jm_client(&self) -> State<'_, JmClient>;
+    fn get_download_manager(&self) -> State<'_, DownloadManager>;
 }
 
 impl AppHandleExt for tauri::AppHandle {
-    fn get_config(&self) -> State<RwLock<Config>> {
+    fn get_config(&self) -> State<'_, RwLock<Config>> {
         self.state::<RwLock<Config>>()
     }
-    fn get_jm_client(&self) -> State<JmClient> {
+    fn get_jm_client(&self) -> State<'_, JmClient> {
         self.state::<JmClient>()
     }
-    fn get_download_manager(&self) -> State<DownloadManager> {
+    fn get_download_manager(&self) -> State<'_, DownloadManager> {
         self.state::<DownloadManager>()
     }
 }

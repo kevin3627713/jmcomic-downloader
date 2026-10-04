@@ -1,21 +1,15 @@
-import { ref, onMounted, onUnmounted } from 'vue'
-
-const isMobile = ref(false)
+import { ref, onScopeDispose } from 'vue'
 
 export function useIsMobile() {
-  onMounted(() => {
-    const mediaQuery = window.matchMedia('(min-width: 768px)')
-    isMobile.value = !mediaQuery.matches
-
-    const handler = (e: MediaQueryListEvent) => {
-      isMobile.value = !e.matches
-    }
-    mediaQuery.addEventListener('change', handler)
-
-    onUnmounted(() => {
-      mediaQuery.removeEventListener('change', handler)
-    })
-  })
+  const mediaQuery = window.matchMedia('(max-width: 767px)')
+  const ios =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const isMobile = ref(mediaQuery.matches || ios)
+  const handler = () => {
+    isMobile.value = mediaQuery.matches || ios
+  }
+  mediaQuery.addEventListener('change', handler)
+  onScopeDispose(() => mediaQuery.removeEventListener('change', handler))
 
   return isMobile
 }

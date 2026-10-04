@@ -9,6 +9,9 @@ export const useStore = defineStore('store', () => {
   const userProfile = ref<GetUserProfileRespData>()
   const pickedComic = ref<Comic>()
   const currentTabName = ref<CurrentTabName>('search')
+  const mobileTab = ref<CurrentTabName | 'progresses'>('search')
+  const runtimePlatform = ref('')
+  const exportingComics = ref(new Set<string>())
   const progresses = ref<Map<number, ProgressData>>(new Map())
   const getFavoriteResult = ref<GetFavoriteResult>()
   const searchResult = ref<SearchResult>()
@@ -29,6 +32,9 @@ export const useStore = defineStore('store', () => {
     userProfile,
     pickedComic,
     currentTabName,
+    mobileTab,
+    runtimePlatform,
+    exportingComics,
     progresses,
     getFavoriteResult,
     searchResult,

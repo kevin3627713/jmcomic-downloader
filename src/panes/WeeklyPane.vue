@@ -28,8 +28,8 @@ onMounted(async () => {
 
   weeklyInfo.value = result.data
 
-  selectedCategoryId.value = result.data.categories[0].id
-  currentWeeklyTypeId.value = result.data.type[result.data.type.length - 1].id
+  selectedCategoryId.value = result.data.categories[0]?.id ?? ''
+  currentWeeklyTypeId.value = result.data.type[result.data.type.length - 1]?.id ?? ''
 })
 
 watch(
@@ -41,6 +41,7 @@ watch(
 )
 
 async function getWeekly() {
+  if (!selectedCategoryId.value || !currentWeeklyTypeId.value) return
   const result = await commands.getWeekly(selectedCategoryId.value, currentWeeklyTypeId.value)
   if (result.status === 'error') {
     console.error(result.error)
@@ -55,19 +56,25 @@ async function getWeekly() {
   <div v-if="weeklyInfo !== undefined" class="flex-1 min-h-0 flex flex-col">
     <n-select
       v-if="categoryOptions !== undefined"
-      class="flex box-border px-2 pt-2"
+      class="pane-toolbar flex box-border px-4 pt-3"
       v-model:value="selectedCategoryId"
       :options="categoryOptions"
       :show-checkmark="false"
       size="small" />
-    <n-tabs class="h-full overflow-auto flex flex-col" v-model:value="currentWeeklyTypeId" type="line" size="small">
+    <n-tabs
+      class="flex-1 min-h-0 overflow-hidden flex flex-col"
+      v-model:value="currentWeeklyTypeId"
+      type="line"
+      size="small">
       <n-tab-pane
         class="h-full overflow-auto flex flex-col p-0!"
         v-for="weeklyType in weeklyInfo.type"
         :key="weeklyType.id"
         :name="weeklyType.id"
         :tab="weeklyType.title">
-        <div v-if="store.getWeeklyResult !== undefined" class="flex flex-col gap-row-2 overflow-auto box-border px-2 flex-1 min-h-0">
+        <div
+          v-if="store.getWeeklyResult !== undefined"
+          class="flex flex-col gap-row-2 overflow-auto box-border px-4 pb-3 flex-1 min-h-0">
           <ComicCard
             v-for="comicInWeekly in store.getWeeklyResult.list"
             :key="comicInWeekly.id"
