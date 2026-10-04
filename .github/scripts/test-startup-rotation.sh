@@ -4,7 +4,12 @@ set -euo pipefail
 TEST_DIR=$(mktemp -d)
 APP="$TEST_DIR/JMStartupRotationTest.app"
 SIMULATOR=""
+LAUNCH_PID=""
 cleanup() {
+  if [ -n "$LAUNCH_PID" ]; then
+    kill "$LAUNCH_PID" >/dev/null 2>&1 || true
+    wait "$LAUNCH_PID" 2>/dev/null || true
+  fi
   if [ -n "$SIMULATOR" ]; then
     xcrun simctl shutdown "$SIMULATOR" >/dev/null 2>&1 || true
     xcrun simctl delete "$SIMULATOR" >/dev/null 2>&1 || true
@@ -54,22 +59,20 @@ SIMULATOR=$(xcrun simctl create "JMStartupRotationTest" "$DEVICE_TYPE" "$RUNTIME
 xcrun simctl boot "$SIMULATOR"
 xcrun simctl bootstatus "$SIMULATOR" -b
 xcrun simctl install "$SIMULATOR" "$APP"
-xcrun simctl launch --stdout="$TEST_DIR/stdout.log" --stderr="$TEST_DIR/stderr.log" \
-  "$SIMULATOR" com.lanyeeee.startup-rotation-test
+xcrun simctl launch --console "$SIMULATOR" com.lanyeeee.startup-rotation-test \
+  > "$TEST_DIR/process.log" 2>&1 &
+LAUNCH_PID=$!
 CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR" com.lanyeeee.startup-rotation-test data)
 RESULT="$CONTAINER/Documents/startup-rotation-result.json"
 for ((attempt = 0; attempt < 60; attempt++)); do
   if [ -f "$RESULT" ]; then break; fi
   sleep 0.5
 done
-cat "$TEST_DIR/stderr.log"
+cat "$TEST_DIR/process.log"
 if [ ! -f "$RESULT" ]; then
   echo "Simulator test did not produce a result."
   exit 1
 fi
 cat "$RESULT"
-jq -e '.status == "passed" and .modalDismissed and .portrait and .webviewFillsRoot' "$RESULT"
-test "$(grep -c '\[StartupRotation\] requesting landscape then portrait' "$TEST_DIR/stderr.log")" -eq 1
-grep -q '\[StartupRotation\] landscape layout completed' "$TEST_DIR/stderr.log"
-grep -q '\[StartupRotation\] portrait layout completed' "$TEST_DIR/stderr.log"
+jq -e '.status == "passed" and .modalDismissed and .portrait and .webviewFillsRoot and .orientations == [4, 1]' "$RESULT"
 echo "Native startup rotation passed: landscape, portrait, modal cleanup, full WebView, JS viewport, and one-time execution."

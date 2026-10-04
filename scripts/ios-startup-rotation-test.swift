@@ -44,6 +44,11 @@ final class RotationTestAppDelegate: UIResponder, UIApplicationDelegate {
             saveResult(["status": "failed", "reason": "temporary controller remained visible"])
             return
         }
+        guard rotation.completedOrientations == [.landscapeRight, .portrait] else {
+            saveResult(["status": "failed", "reason": "native orientation sequence did not complete",
+                        "orientations": rotation.completedOrientations.map { $0.rawValue }])
+            return
+        }
         guard window.bounds.height > window.bounds.width,
               webview.window === window,
               abs(webview.frame.height - root.view.bounds.height) < 1,
@@ -70,7 +75,8 @@ final class RotationTestAppDelegate: UIResponder, UIApplicationDelegate {
                     return
                 }
                 self.saveResult(["status": "passed", "modalDismissed": true, "portrait": true,
-                                 "webviewFillsRoot": true, "metrics": metrics, "expectedHeight": expected])
+                                 "webviewFillsRoot": true, "metrics": metrics, "expectedHeight": expected,
+                                 "orientations": self.rotation.completedOrientations.map { $0.rawValue }])
             }
     }
 

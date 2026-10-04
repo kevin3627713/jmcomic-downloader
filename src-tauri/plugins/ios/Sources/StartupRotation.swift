@@ -57,6 +57,7 @@ private final class StartupOrientationController: UIViewController {
 }
 
 final class StartupRotation {
+    private(set) var completedOrientations: [UIInterfaceOrientation] = []
     private weak var webview: WKWebView?
     private weak var presenter: UIViewController?
     private var landscape: StartupOrientationController?
@@ -111,6 +112,7 @@ final class StartupRotation {
 
     private func returnToPortrait() {
         guard !finished, let landscape = landscape else { return }
+        completedOrientations.append(.landscapeRight)
         NSLog("[StartupRotation] landscape layout completed")
         let controller = StartupOrientationController(orientation: .portrait)
         portrait = controller
@@ -131,7 +133,10 @@ final class StartupRotation {
         landscape?.onFailure = nil
         portrait?.onFailure = nil
         if let reason = reason { NSLog("[StartupRotation] stopped: %@", reason) }
-        else { NSLog("[StartupRotation] portrait layout completed") }
+        else {
+            completedOrientations.append(.portrait)
+            NSLog("[StartupRotation] portrait layout completed")
+        }
 
         let restored = { [weak self] in
             guard let self = self else { return }
