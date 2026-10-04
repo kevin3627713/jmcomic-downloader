@@ -8,6 +8,7 @@ private final class StartupOrientationController: UIViewController {
     var onReady: (() -> Void)?
     var onFailure: ((String) -> Void)?
     private var appeared = false
+    private var presentationCompleted = false
 
     init(orientation: UIInterfaceOrientation) {
         self.orientation = orientation
@@ -33,6 +34,11 @@ private final class StartupOrientationController: UIViewController {
         super.viewDidAppear(animated)
         appeared = true
         notifyWhenReady()
+    }
+
+    func markPresented() {
+        presentationCompleted = true
+        notifyWhenReady()
         if onReady != nil, #available(iOS 16.0, *), let scene = view.window?.windowScene {
             setNeedsUpdateOfSupportedInterfaceOrientations()
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: supportedInterfaceOrientations)) { [weak self] error in
@@ -47,7 +53,8 @@ private final class StartupOrientationController: UIViewController {
     }
 
     private func notifyWhenReady() {
-        guard appeared, view.window != nil, view.bounds.width > 0, view.bounds.height > 0 else { return }
+        guard appeared, presentationCompleted, view.window != nil,
+              view.bounds.width > 0, view.bounds.height > 0 else { return }
         let landscape = view.bounds.width > view.bounds.height
         guard landscape == orientation.isLandscape, let ready = onReady else { return }
         onReady = nil
@@ -72,6 +79,12 @@ final class StartupRotation {
         started = true
         self.webview = webview
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        // The HTML already pads env(safe-area-inset-*). UIKit must not subtract
+        // the same safe areas from the WebKit viewport as scroll-view insets.
+        webview.scrollView.contentInsetAdjustmentBehavior = .never
+        webview.scrollView.contentInset = .zero
+        webview.scrollView.scrollIndicatorInsets = .zero
+        webview.scrollView.automaticallyAdjustsScrollIndicatorInsets = false
         waitForWindow(attempts: 40)
     }
 
@@ -107,7 +120,7 @@ final class StartupRotation {
         timeout = deadline
         DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: deadline)
         NSLog("[StartupRotation] requesting landscape then portrait")
-        root.present(controller, animated: false)
+        root.present(controller, animated: false) { controller.markPresented() }
     }
 
     private func returnToPortrait() {
@@ -118,7 +131,7 @@ final class StartupRotation {
         portrait = controller
         controller.onReady = { [weak self] in self?.finish(reason: nil) }
         controller.onFailure = { [weak self] error in self?.finish(reason: error) }
-        landscape.present(controller, animated: false)
+        landscape.present(controller, animated: false) { controller.markPresented() }
     }
 
     private func finish(reason: String?) {

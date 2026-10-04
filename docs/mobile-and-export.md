@@ -37,7 +37,7 @@ PDF / CBZ 逐章生成，减少同时解码多个章节的内存压力。写完�
 
 本地环境为 Windows，iOS 构建由现有 GitHub Actions 在 macOS 上执行。提交 `3571492` 已通过原生编译并生成 IPA，用户反馈手机基本操作可用，但首次竖屏打开时底栏偏高，横屏后再竖屏会恢复。提交 `d35804f` 移除了正常布局对初始 `visualViewport.height` 的依赖，浏览器回归通过，但用户真机反馈问题仍然存在。
 
-按用户要求，iPhone 现在在 WebView 挂到活动窗口后，通过临时全屏原生控制器执行一次横屏、一次竖屏；确认对应方向完成布局后才进入下一步。切换结束撤销临时控制器，把 WebView 重新布局到父视图的完整边界，并通知前端重新读取视口。使用全屏控制器的 `preferredInterfaceOrientationForPresentation`，兼容当前 Tauri 无 `UIWindowScene` 的窗口；有场景且系统为 iOS 16 以上时，也可在方向尚未更新时请求场景几何更新。执行有超时和失活清理，只在本次 WebView 启动时执行一次，不锁定后续手动旋转，也不对 iPad 执行。
+按用户要求，iPhone 现在在 WebView 挂到活动窗口后，通过临时全屏原生控制器执行一次横屏、一次竖屏；确认对应方向完成布局及原生呈现完成后才进入下一步。切换结束撤销临时控制器，把 WebView 重新布局到父视图的完整边界，并通知前端重新读取视口。WebView 滚动视图使用 `.never` 安全区缩进，避免 UIKit 先扣除安全区、HTML 再添加安全区间距。模拟器曾实际出现原生视图高 480、WebKit 视口高 460 的差异，验证会拒绝这种结果。使用全屏控制器的 `preferredInterfaceOrientationForPresentation`，兼容当前 Tauri 无 `UIWindowScene` 的窗口；有场景且系统为 iOS 16 以上时，也可在方向尚未更新时请求场景几何更新。执行有超时和失活清理，只在本次 WebView 启动时执行一次，不锁定后续手动旋转，也不对 iPad 执行。
 
 工作流增加独立 iPhone 模拟器应用验证，仅编译和运行同一个 `StartupRotation.swift`，不连接漫画 API 或读取用户文件。应用从高度少 80 的原生 WebView 开始，检查实际横屏和竖屏布局、临时控制器撤销、WebView 填满父视图、WebKit 视口及底栏恢复，以及重复调用不再次旋转。真机首次启动、安全区域和键盘效果仍需安装新版确认；Quick Look、分享与存储到文件，以及大型漫画内存占用也需真机验证。
 
