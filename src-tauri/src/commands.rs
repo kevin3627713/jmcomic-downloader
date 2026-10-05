@@ -658,6 +658,8 @@ pub fn get_downloaded_comics(app: AppHandle) -> Vec<Comic> {
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
 pub fn export_cbz(app: AppHandle, comic: Comic) -> CommandResult<()> {
+    let _file_lease =
+        crate::comic_files::read(comic.id).map_err(|err| CommandError::from("导出cbz失败", err))?;
     let comic = get_synced_comic(app.clone(), comic)?;
     let comic_title = &comic.name;
     export::cbz(&app, &comic)
@@ -670,6 +672,8 @@ pub fn export_cbz(app: AppHandle, comic: Comic) -> CommandResult<()> {
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
 pub fn export_pdf(app: AppHandle, comic: Comic) -> CommandResult<()> {
+    let _file_lease =
+        crate::comic_files::read(comic.id).map_err(|err| CommandError::from("导出pdf失败", err))?;
     let comic = get_synced_comic(app.clone(), comic)?;
     let comic_title = &comic.name;
     export::pdf(&app, &comic)
@@ -703,6 +707,33 @@ pub fn get_comic_pdf_path(app: AppHandle, comic: Comic) -> CommandResult<Option<
 #[specta::specta]
 pub fn get_runtime_platform() -> String {
     std::env::consts::OS.to_owned()
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn get_comic_file_status(
+    app: AppHandle,
+    comic: Comic,
+) -> CommandResult<crate::library::ComicFileStatus> {
+    let _lease = crate::comic_files::read(comic.id)
+        .map_err(|err| CommandError::from("读取文件状态失败", err))?;
+    let config = app.get_config().read().clone();
+    crate::library::file_status(&config.download_dir, &config.export_dir, &comic)
+        .map_err(|err| CommandError::from("读取文件状态失败", err))
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn delete_comic_files(
+    app: AppHandle,
+    comic: Comic,
+    kind: crate::library::DeleteKind,
+) -> CommandResult<crate::library::DeleteResult> {
+    let _lease =
+        crate::comic_files::delete(comic.id).map_err(|err| CommandError::from("删除失败", err))?;
+    let config = app.get_config().read().clone();
+    crate::library::delete_files(&config.download_dir, &config.export_dir, &comic, kind)
+        .map_err(|err| CommandError::from("删除未完成，请刷新书库检查文件状态", err))
 }
 
 #[tauri::command(async)]

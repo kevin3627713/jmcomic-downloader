@@ -3,9 +3,9 @@ import { Comic, commands } from '../../bindings.ts'
 import { computed, nextTick, ref, watch, watchEffect } from 'vue'
 import DownloadedComicCard from './components/DownloadedComicCard.vue'
 import { open } from '@tauri-apps/plugin-dialog'
-import { PhFolderOpen } from '@phosphor-icons/vue'
+import { PhFolderOpen, PhArrowClockwise } from '@phosphor-icons/vue'
 import { useStore } from '../../store.ts'
-import { DropdownOption, NIcon } from 'naive-ui'
+import { DropdownOption, NIcon, useMessage } from 'naive-ui'
 import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { PhChecks, PhCheck, PhX } from '@phosphor-icons/vue'
 import UpdateDownloadedComicsButton from './components/UpdateDownloadedComicsButton.vue'
@@ -16,6 +16,10 @@ const store = useStore()
 const isMobile = useIsMobile()
 const { exportComic } = useComicExport()
 const bulkExporting = ref(false)
+const managing = ref(false)
+const refreshing = ref(false)
+const message = useMessage()
+let refreshRequest = 0
 
 const selectedIds = ref<Set<number>>(new Set())
 const checkedIds = ref<Set<number>>(new Set())
@@ -57,6 +61,29 @@ watch(currentPage, () => {
 })
 
 // 监听标签页变化，更新下载的漫画列表
+async function refreshLibrary() {
+  const request = ++refreshRequest
+  refreshing.value = true
+  try {
+    const comics = await commands.getDownloadedComics()
+    if (request !== refreshRequest) return
+    downloadedComics.value = comics
+    const ids = new Set(comics.map((comic) => comic.id))
+    checkedIds.value = new Set([...checkedIds.value].filter((id) => ids.has(id)))
+    selectedIds.value = new Set([...selectedIds.value].filter((id) => ids.has(id)))
+  } catch (error) {
+    message.error(String(error))
+  } finally {
+    if (request === refreshRequest) refreshing.value = false
+  }
+}
+function toggleManaging() {
+  managing.value = !managing.value
+  if (!managing.value) {
+    checkedIds.value.clear()
+    selectedIds.value.clear()
+  }
+}
 watch(
   () => store.currentTabName,
   async () => {
@@ -64,7 +91,7 @@ watch(
       return
     }
 
-    downloadedComics.value = await commands.getDownloadedComics()
+    await refreshLibrary()
   },
   { immediate: true },
 )
@@ -167,6 +194,7 @@ function useDropdown() {
       ),
       props: {
         onClick: () => {
+          managing.value = true
           selectedIds.value.forEach((id) => checkedIds.value.add(id))
           dropdownShowing.value = false
         },
@@ -223,8 +251,10 @@ function useDropdown() {
 </script>
 
 <template>
-  <div v-if="store.config !== undefined" class="flex-1 min-h-0 flex flex-col">
-    <div class="pane-toolbar flex gap-2 box-border px-4 pt-3">
+  <div v-if="store.config !== undefined" class="library-pane flex-1 min-h-0 flex flex-col">
+    <div
+      v-if="store.runtimePlatform !== 'ios'"
+      class="library-directory-bar pane-toolbar flex gap-2 box-border px-4 pt-3">
       <n-input-group v-if="store.runtimePlatform !== 'ios'" class="min-w-0 flex-1">
         <n-input-group-label size="small">导出目录</n-input-group-label>
         <n-input v-model:value="store.config.exportDir" size="small" readonly @click="selectExportDir" />
@@ -236,31 +266,36 @@ function useDropdown() {
           </template>
         </n-button>
       </n-input-group>
+    </div>
+    <div class="library-header">
+      <span class="library-count">
+        <strong>{{ downloadedComics.length }}</strong>
+        本漫画
+      </span>
       <update-downloaded-comics-button />
+      <button
+        class="library-toolbar-button"
+        :disabled="!downloadedComics.length || bulkExporting"
+        @click="toggleManaging">
+        {{ managing ? '完成' : '管理' }}
+      </button>
+      <button class="library-more" aria-label="刷新书库" :disabled="refreshing" @click="refreshLibrary">
+        <PhArrowClockwise :size="19" :class="{ 'library-refreshing': refreshing }" />
+      </button>
     </div>
-    <div class="chapter-tools">
-      <span>{{ downloadedComics.length }} 本漫画 · 已选 {{ checkedIds.size }} 本</span>
-      <n-button :disabled="!currentPageComics.length" @click="toggleAll">
+    <div v-if="managing" class="library-selection-toolbar">
+      <span>已选 {{ checkedIds.size }} 本</span>
+      <button class="library-toolbar-button" :disabled="!currentPageComics.length" @click="toggleAll">
         {{ checkedIds.size && checkedIds.size === currentPageComics.length ? '取消全选' : '全选本页' }}
-      </n-button>
-      <n-button
-        @click="
-          async () => {
-            downloadedComics = await commands.getDownloadedComics()
-          }
-        ">
-        刷新
-      </n-button>
+      </button>
     </div>
-    <p v-if="store.runtimePlatform === 'ios'" class="px-4 m-0 mb-2 text-xs text-gray">
-      导出完成后可分享或保存到“文件”。
-    </p>
     <div v-if="!downloadedComics.length" class="empty-state">
       <n-empty description="书库还没有漫画，下载完成后会显示在这里" />
     </div>
     <component
+      v-else
       :is="isMobile ? 'div' : SelectionArea"
-      class="flex flex-col overflow-auto box-border px-4 selection-container mb-2 flex-1 min-h-0"
+      class="library-list selection-container flex-1 min-h-0"
       ref="selectionAreaRef"
       :options="{ selectables: '.selectable', features: { deselectOnBlur: true } }"
       @contextmenu="!isMobile && showDropdown($event)"
@@ -270,20 +305,23 @@ function useDropdown() {
         v-for="comic in currentPageComics"
         :key="comic.id"
         :data-key="comic.id"
-        :class="['selectable mb-2', selectedIds.has(comic.id) ? 'selected shadow-md' : 'hover:bg-gray-1']"
+        :class="['selectable', selectedIds.has(comic.id) ? 'selected' : '']"
         :comic="comic"
+        :managing="managing"
         :checkbox-checked="checkboxChecked"
         :handle-checkbox-click="handleCheckboxClick"
-        :handle-context-menu="handleContextMenu" />
+        :handle-context-menu="handleContextMenu"
+        @changed="refreshLibrary" />
     </component>
 
-    <div v-if="checkedIds.size" class="chapter-actions">
-      <n-button class="flex-1" type="primary" :loading="bulkExporting" @click="exportSelected('pdf')">
+    <div v-if="checkedIds.size" class="library-bulk-actions">
+      <button class="library-action library-action-primary" :disabled="bulkExporting" @click="exportSelected('pdf')">
         导出所选 PDF
-      </n-button>
-      <n-button class="flex-1" :loading="bulkExporting" @click="exportSelected('cbz')">导出所选 CBZ</n-button>
+      </button>
+      <button class="library-action" :disabled="bulkExporting" @click="exportSelected('cbz')">导出所选 CBZ</button>
     </div>
     <n-pagination
+      v-if="pageCount > 1"
       class="box-border p-2 pt-0 mt-auto"
       :simple="isMobile"
       :page-count="pageCount"

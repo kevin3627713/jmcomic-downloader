@@ -17,7 +17,7 @@ async (page) => {
   }
   if (calls.filter(c => c.command === 'create_download_task' && c.args.chapterId === 999104).length !== 2) throw new Error('Retry did not recreate the failed task')
   await page.getByRole('button', { name: '书库', exact: true }).click()
-  await page.getByRole('button', { name: '全选本页', exact: true }).waitFor()
+  await page.getByRole('button', { name: '更多操作 · 第二本示例漫画', exact: true }).waitFor()
   await page.screenshot({ path: 'output/playwright/library-390.png' })
   console.log('Task pause/resume/retry/cancel passed; ready to verify library bulk export.')
 }

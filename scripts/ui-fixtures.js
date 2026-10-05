@@ -84,6 +84,8 @@ async (page) => {
     const callbacks = new Map()
     const listeners = new Map()
     const tasks = new Map()
+    const deletedComics = new Set()
+    const deletedFormats = new Map()
     window.__JM_TEST_CALLS__ = []
     const emit = (event, payload) => {
       for (const [id, listener] of listeners)
@@ -148,10 +150,22 @@ async (page) => {
         if (command.startsWith('get_synced_comic_in_')) return args.comic
         if (command === 'get_downloaded_comics') {
           const count = Math.min(60, Math.max(2, Number(new URL(location.href).searchParams.get('books') || 2)))
-          return Array.from({ length: count }, (_, i) => i ? { ...comic, id: 999001 + i, name: i === 1 ? '第二本示例漫画' : '示例漫画 ' + (i + 1) } : comic)
+          return Array.from({ length: count }, (_, i) => i ? { ...comic, id: 999001 + i, name: i === 1 ? '第二本示例漫画' : '示例漫画 ' + (i + 1) } : comic).filter(c => !deletedComics.has(c.id))
         }
-        if (command === 'get_comic_pdf_path') return '/exports/demo.pdf'
-        if (command === 'get_comic_cbz_paths') return ['/exports/demo.cbz']
+        if (command === 'get_comic_file_status') {
+          const deleted = deletedFormats.get(args.comic.id) || new Set()
+          return { pdfCount: deleted.has('pdf') ? 0 : 5, cbzCount: deleted.has('cbz') ? 0 : 4, hasPdf: !deleted.has('pdf') }
+        }
+        if (command === 'delete_comic_files') {
+          if (args.kind === 'all') deletedComics.add(args.comic.id)
+          else {
+            if (!deletedFormats.has(args.comic.id)) deletedFormats.set(args.comic.id, new Set())
+            deletedFormats.get(args.comic.id).add(args.kind)
+          }
+          return { removedFiles: args.kind === 'pdf' ? 5 : args.kind === 'cbz' ? 4 : 25, removedComic: args.kind === 'all' }
+        }
+        if (command === 'get_comic_pdf_path') return deletedFormats.get(args.comic.id)?.has('pdf') ? null : '/exports/demo.pdf'
+        if (command === 'get_comic_cbz_paths') return deletedFormats.get(args.comic.id)?.has('cbz') ? [] : ['/exports/demo.cbz']
         if (command === 'create_download_task') {
           const chapterInfo = comic.chapterInfos.find((c) => c.chapterId === args.chapterId)
           tasks.set(args.chapterId, { state: 'Downloading' })
@@ -164,6 +178,7 @@ async (page) => {
         if (command === 'resume_download_task') update(args.chapterId, 'Downloading')
         if (command === 'cancel_download_task') update(args.chapterId, 'Cancelled')
         if (command === 'export_pdf') {
+          deletedFormats.get(args.comic.id)?.delete('pdf')
           emit('export-pdf-event', {
             event: 'CreateStart',
             data: { uuid: 'create-demo', comicTitle: comic.name, total: 4 },
@@ -179,6 +194,7 @@ async (page) => {
           })
         }
         if (command === 'export_cbz') {
+          deletedFormats.get(args.comic.id)?.delete('cbz')
           emit('export-cbz-event', { event: 'Start', data: { uuid: 'cbz-demo', comicTitle: comic.name, total: 4 } })
           emit('export-cbz-event', { event: 'End', data: { uuid: 'cbz-demo', chapterExportDir: '/exports/cbz' } })
         }

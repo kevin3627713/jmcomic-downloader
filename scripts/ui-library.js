@@ -3,6 +3,7 @@
 async (page) => {
   const errors = []
   page.on('pageerror', error => errors.push(String(error)))
+  await page.getByRole('button', { name: '管理', exact: true }).click()
   await page.getByRole('checkbox', { name: '选择 漫长旅途中的故事：用于检查手机布局的示例漫画', exact: true }).click()
   await page.getByRole('checkbox', { name: '选择 第二本示例漫画', exact: true }).click()
   const before = await page.evaluate(() => window.__JM_TEST_CALLS__.filter(c => c.command === 'export_pdf').length)

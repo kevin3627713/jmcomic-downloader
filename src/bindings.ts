@@ -5,6 +5,14 @@
 
 
 export const commands = {
+async getComicFileStatus(comic: Comic): Promise<Result<ComicFileStatus, CommandError>> {
+  try { return { status: "ok", data: await TAURI_INVOKE("get_comic_file_status", { comic }) }; }
+  catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
+async deleteComicFiles(comic: Comic, kind: DeleteKind): Promise<Result<DeleteResult, CommandError>> {
+  try { return { status: "ok", data: await TAURI_INVOKE("delete_comic_files", { comic, kind }) }; }
+  catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
 async getRuntimePlatform(): Promise<string> { return await TAURI_INVOKE("get_runtime_platform"); },
 async getComicCbzPaths(comic: Comic): Promise<Result<string[], CommandError>> {
   try { return { status: "ok", data: await TAURI_INVOKE("get_comic_cbz_paths", { comic }) }; }
@@ -352,3 +360,7 @@ function __makeEvents__<T extends Record<string, any>>(
 		},
 	);
 }
+
+export type ComicFileStatus = { pdfCount: number; cbzCount: number; hasPdf: boolean };
+export type DeleteKind = "all" | "pdf" | "cbz";
+export type DeleteResult = { removedFiles: number; removedComic: boolean };

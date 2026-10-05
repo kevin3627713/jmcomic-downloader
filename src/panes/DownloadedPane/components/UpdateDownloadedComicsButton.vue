@@ -148,7 +148,7 @@ function handleButtonClick() {
     </template>
 
     <template #trigger>
-      <n-button size="small" @click="handleButtonClick">更新库存</n-button>
+      <n-button size="small" quaternary @click="handleButtonClick">更新库存</n-button>
     </template>
   </n-popconfirm>
 </template>

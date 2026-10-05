@@ -99,6 +99,7 @@ impl DownloadManager {
 
     pub fn create_download_task(&self, comic: Comic, chapter_id: i64) -> anyhow::Result<()> {
         use DownloadTaskState::{Downloading, Paused, Pending};
+        let file_lease = crate::comic_files::read(comic.id)?;
         let mut tasks = self.download_tasks.write();
         if let Some(task) = tasks.get(&chapter_id) {
             // 如果任务已经存在，且状态是`Pending`、`Downloading`或`Paused`，则不创建新任务
@@ -110,7 +111,7 @@ impl DownloadManager {
         tasks.remove(&chapter_id);
         let task = DownloadTask::new(self.app.clone(), comic, chapter_id)
             .context("DownloadTask创建失败")?;
-        tauri::async_runtime::spawn(task.clone().process());
+        tauri::async_runtime::spawn(task.clone().process(file_lease));
         tasks.insert(chapter_id, task);
         Ok(())
     }
@@ -197,10 +198,10 @@ impl DownloadTask {
         Ok(task)
     }
 
-    async fn process(self) {
+    async fn process(self, file_lease: crate::comic_files::ReadLease) {
         self.emit_download_task_create_event();
 
-        let download_comic_task = self.download_chapter();
+        let download_comic_task = self.download_chapter(&file_lease);
         tokio::pin!(download_comic_task);
 
         let mut state_receiver = self.state_sender.subscribe();
@@ -227,7 +228,7 @@ impl DownloadTask {
         }
     }
 
-    async fn download_chapter(&self) {
+    async fn download_chapter(&self, file_lease: &crate::comic_files::ReadLease) {
         let comic_title = &self.comic.name;
         let chapter_title = &self.chapter_info.chapter_title;
         let chapter_id = self.chapter_info.chapter_id;
@@ -290,7 +291,11 @@ impl DownloadTask {
             let temp_download_dir = temp_download_dir.clone();
             let download_img_task =
                 DownloadImgTask::new(self, url, i, temp_download_dir, block_num, download_format);
-            join_set.spawn(download_img_task.process());
+            let image_lease = file_lease.clone();
+            join_set.spawn(async move {
+                let _image_lease = image_lease;
+                download_img_task.process().await;
+            });
         }
         join_set.join_all().await;
         tracing::trace!(comic_title, chapter_title, "所有图片下载任务完成");

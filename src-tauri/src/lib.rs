@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::download_manager::DownloadManager;
 use crate::jm_client::JmClient;
 
+mod comic_files;
 mod commands;
 mod config;
 mod download_manager;
@@ -20,6 +21,7 @@ mod events;
 mod export;
 mod extensions;
 mod jm_client;
+mod library;
 mod logger;
 mod responses;
 mod types;
@@ -54,6 +56,8 @@ pub fn run() {
             show_path_in_file_manager,
             sync_favorite_folder,
             get_downloaded_comics,
+            get_comic_file_status,
+            delete_comic_files,
             export_cbz,
             export_pdf,
             get_comic_pdf_path,

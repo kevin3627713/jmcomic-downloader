@@ -106,6 +106,37 @@ mod tests {
         assert_eq!(chapter.chapter_download_dir, None);
         assert_eq!(chapter.page_count, None);
     }
+
+    #[test]
+    fn deleted_comic_clears_download_and_chapter_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut comic = fixture_comic(temp.path());
+        comic.is_downloaded = Some(true);
+        comic.chapter_infos[0].is_downloaded = Some(true);
+        comic.chapter_infos[0].page_count = Some(51);
+        comic.update_fields(&HashMap::new()).unwrap();
+        assert_eq!(comic.is_downloaded, Some(false));
+        assert_eq!(comic.comic_download_dir, None);
+        assert_eq!(comic.chapter_infos[0].is_downloaded, Some(false));
+        assert_eq!(comic.chapter_infos[0].page_count, None);
+    }
+
+    #[test]
+    fn library_refresh_cannot_migrate_metadata_during_deletion() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut comic = fixture_comic(temp.path());
+        comic.id = -90002;
+        let chapter = temp.path().join("test chapter");
+        std::fs::create_dir(&chapter).unwrap();
+        let metadata = temp.path().join("元数据.json");
+        std::fs::write(&metadata, serde_json::to_vec(&comic).unwrap()).unwrap();
+        let deleting = crate::comic_files::delete(comic.id).unwrap();
+        assert!(Comic::from_metadata(&metadata).is_err());
+        assert!(!chapter.join("章节元数据.json").exists());
+        drop(deleting);
+        assert!(Comic::from_metadata(&metadata).is_ok());
+        assert!(chapter.join("章节元数据.json").exists());
+    }
 }
 
 impl Comic {
@@ -192,6 +223,14 @@ impl Comic {
 
             self.update_chapter_infos_fields()
                 .context("更新章节信息字段失败")?;
+        } else {
+            self.comic_download_dir = None;
+            self.is_downloaded = Some(false);
+            for chapter in &mut self.chapter_infos {
+                chapter.chapter_download_dir = None;
+                chapter.is_downloaded = Some(false);
+                chapter.page_count = None;
+            }
         }
 
         Ok(())
@@ -369,6 +408,9 @@ impl Comic {
         &self,
         comic_download_dir: &Path,
     ) -> anyhow::Result<()> {
+        // Library refreshes may migrate old metadata; they must not recreate
+        // chapter folders while deletion is removing this comic.
+        let _file_lease = crate::comic_files::read(self.id)?;
         let mut chapter_dirs = HashSet::new();
         for entry in std::fs::read_dir(comic_download_dir)?.filter_map(Result::ok) {
             let Ok(file_type) = entry.file_type() else {
