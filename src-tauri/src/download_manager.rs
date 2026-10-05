@@ -291,11 +291,7 @@ impl DownloadTask {
             let temp_download_dir = temp_download_dir.clone();
             let download_img_task =
                 DownloadImgTask::new(self, url, i, temp_download_dir, block_num, download_format);
-            let image_lease = file_lease.clone();
-            join_set.spawn(async move {
-                let _image_lease = image_lease;
-                download_img_task.process().await;
-            });
+            join_set.spawn(download_img_task.process(file_lease.clone()));
         }
         join_set.join_all().await;
         tracing::trace!(comic_title, chapter_title, "所有图片下载任务完成");
@@ -685,8 +681,8 @@ impl DownloadImgTask {
         }
     }
 
-    async fn process(self) {
-        let download_img_task = self.download_img();
+    async fn process(self, file_lease: crate::comic_files::ReadLease) {
+        let download_img_task = self.download_img(&file_lease);
         tokio::pin!(download_img_task);
 
         let mut state_receiver = self.download_task.state_sender.subscribe();
@@ -713,7 +709,7 @@ impl DownloadImgTask {
         }
     }
 
-    async fn download_img(&self) {
+    async fn download_img(&self, file_lease: &crate::comic_files::ReadLease) {
         let url = &self.url;
         let comic_title = &self.download_task.comic.name;
         let chapter_title = &self.download_task.chapter_info.chapter_title;
@@ -764,7 +760,16 @@ impl DownloadImgTask {
 
         let block_num = self.block_num;
         // 保存图片
-        if let Err(err) = save_img(&save_path, download_format, block_num, img_data, format).await {
+        if let Err(err) = save_img(
+            &save_path,
+            download_format,
+            block_num,
+            img_data,
+            format,
+            Some(file_lease.clone()),
+        )
+        .await
+        {
             let err_title = format!("保存图片`{url}`失败");
             let string_chain = err.to_string_chain();
             tracing::error!(err_title, message = string_chain);
@@ -912,6 +917,7 @@ async fn save_img(
     block_num: u32,
     src_img_data: Bytes,
     src_format: ImageFormat,
+    file_lease: Option<crate::comic_files::ReadLease>,
 ) -> anyhow::Result<()> {
     // TODO: 如果src_format是WebP，download_format也是WebP，且block_num为0，也可以直接保存
     if src_format == ImageFormat::Gif {
@@ -958,10 +964,20 @@ async fn save_img(
             .context(format!("保存图片`{}`失败", save_path.display()))?;
         Ok(())
     };
-    // 因为图像处理是CPU密集型操作，所以使用rayon并发处理
+    run_image_worker(file_lease, process_img).await
+}
+
+async fn run_image_worker(
+    file_lease: Option<crate::comic_files::ReadLease>,
+    process_img: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
+) -> anyhow::Result<()> {
+    // Rayon jobs outlive a cancelled async receiver. Keep deletion blocked
+    // while the worker is queued or still decoding/writing the image.
     let (sender, receiver) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
     rayon::spawn(move || {
-        let _ = sender.send(process_img());
+        let result = process_img();
+        drop(file_lease);
+        let _ = sender.send(result);
     });
     // 在tokio任务中等待rayon任务的完成，避免阻塞worker threads
     receiver.await?
@@ -1168,10 +1184,43 @@ mod tests {
             DownloadFormat::Jpeg,
             0,
             Bytes::from_static(b"corrupt"),
-            ImageFormat::Jpeg
+            ImageFormat::Jpeg,
+            None,
         )
         .await
         .is_err());
         assert_eq!(std::fs::read(path).unwrap(), b"previous file");
+    }
+
+    #[tokio::test]
+    async fn cancelled_download_keeps_deletion_blocked_until_rayon_write_finishes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fictional-image.bin");
+        let worker_path = path.clone();
+        let lease = crate::comic_files::read(-90003).unwrap();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release, blocked) = std::sync::mpsc::channel();
+        let task = tokio::spawn(run_image_worker(Some(lease), move || {
+            let _ = started.send(());
+            blocked.recv()?;
+            std::fs::write(worker_path, b"fictional worker output")?;
+            Ok(())
+        }));
+        ready.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(crate::comic_files::delete(-90003).is_err());
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Ok(_deleting) = crate::comic_files::delete(-90003) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"fictional worker output");
     }
 }
