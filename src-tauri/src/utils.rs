@@ -2,12 +2,8 @@ use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
 use tauri::AppHandle;
-use walkdir::WalkDir;
 
-use crate::{
-    extensions::{AppHandleExt, WalkDirEntryExt},
-    types::Comic,
-};
+use crate::{extensions::AppHandleExt, types::Comic};
 
 pub fn filename_filter(s: &str) -> String {
     s.chars()
@@ -37,21 +33,9 @@ pub fn md5_hex(data: &str) -> String {
 pub fn create_id_to_dir_map(app: &AppHandle) -> anyhow::Result<HashMap<i64, PathBuf>> {
     let mut id_to_dir_map: HashMap<i64, PathBuf> = HashMap::new();
     let download_dir = app.get_config().read().download_dir.clone();
-    if !download_dir.exists() {
-        return Ok(id_to_dir_map);
-    }
-
-    for entry in WalkDir::new(&download_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        let path = entry.path();
-        if !entry.is_comic_metadata() {
-            continue;
-        }
-
+    for path in crate::storage::metadata_paths(&download_dir)? {
         let metadata_str =
-            std::fs::read_to_string(path).context(format!("读取`{}`失败", path.display()))?;
+            std::fs::read_to_string(&path).context(format!("读取`{}`失败", path.display()))?;
         let comic_json: serde_json::Value = serde_json::from_str(&metadata_str).context(
             format!("将`{}`反序列化为serde_json::Value失败", path.display()),
         )?;

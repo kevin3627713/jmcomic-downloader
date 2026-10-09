@@ -5,6 +5,10 @@
 
 
 export const commands = {
+async getStorageInfo(): Promise<Result<StorageInfo, CommandError>> {
+  try { return { status: "ok", data: await TAURI_INVOKE("get_storage_info") }; }
+  catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
 async getComicFileStatus(comic: Comic): Promise<Result<ComicFileStatus, CommandError>> {
   try { return { status: "ok", data: await TAURI_INVOKE("get_comic_file_status", { comic }) }; }
   catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
@@ -165,8 +169,9 @@ async syncFavoriteFolder() : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getDownloadedComics() : Promise<Comic[]> {
-    return await TAURI_INVOKE("get_downloaded_comics");
+async getDownloadedComics() : Promise<Result<Comic[], CommandError>> {
+    try { return { status: "ok", data: await TAURI_INVOKE("get_downloaded_comics") }; }
+    catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
 },
 async exportCbz(comic: Comic) : Promise<Result<null, CommandError>> {
     try {
@@ -276,6 +281,7 @@ export type ComicInSearch = { id: number; author: string; name: string; image: s
 export type ComicInWeekly = { id: number; author: string; description: string; name: string; image: string; category: Category; category_sub: CategorySub; liked: boolean; is_favorite: boolean; update_at: number; is_downloaded: boolean; comic_download_dir: string }
 export type CommandError = { err_title: string; err_message: string }
 export type Config = { username: string; password: string; downloadDir: string; exportDir: string; downloadFormat: DownloadFormat; dirFmt: string; proxyMode: ProxyMode; proxyHost: string; proxyPort: number; enableFileLogger: boolean; chapterConcurrency: number; chapterDownloadIntervalSec: number; imgConcurrency: number; imgDownloadIntervalSec: number; downloadAllFavoritesIntervalSec: number; updateDownloadedComicsIntervalSec: number; apiDomainMode: ApiDomainMode; customApiDomain: string; shouldDownloadCover: boolean }
+export type StorageInfo = { downloadDir: string; exportDir: string; configPath: string; migrationWarnings: string[] }
 export type DownloadAllFavoritesEvent = { event: "GetFavoritesStart" } | { event: "GetComicsProgress"; data: { current: number; total: number } } | { event: "StartCreateDownloadTasks"; data: { comicId: number; comicTitle: string; current: number; total: number } } | { event: "CreatingDownloadTask"; data: { comicId: number; current: number } } | { event: "EndCreateDownloadTasks"; data: { comicId: number } } | { event: "GetComicsEnd" }
 export type DownloadFormat = "Jpeg" | "Png" | "Webp"
 export type DownloadSleepingEvent = { id: number; remainingSec: number }

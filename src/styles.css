@@ -604,6 +604,19 @@ button:focus-visible {
 }
 .settings-dialog {
   width: 560px !important;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--app-height, 100dvh) - 24px);
+  overflow: hidden !important;
+}
+.settings-dialog .n-dialog__content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.settings-dialog .n-dialog__title,
+.settings-dialog .n-dialog__action {
+  flex: none;
 }
 .settings-form {
   display: flex;
@@ -855,3 +868,16 @@ button:focus-visible {
 .mobile-layout input {
   font-size: 16px !important;
 }
+.library-storage-error {
+  flex: none;
+  margin: 4px 14px 12px;
+  padding: 12px;
+  border: 1px solid #f2b6b6;
+  border-radius: 10px;
+  background: #fff5f5;
+  overflow-wrap: anywhere;
+  max-height: 45%;
+  overflow-y: auto;
+}
+.library-storage-error p { margin: 8px 0; white-space: pre-wrap; }
+.storage-error { color: #c53030; overflow-wrap: anywhere; }

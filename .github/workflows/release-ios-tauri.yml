@@ -69,6 +69,10 @@ jobs:
             # 【举例】添加相册权限描述 (如果你的 App 需要保存图片)
             /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string '我们需要保存漫画到您的相册'" "$PLIST_PATH" || true
             /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string '我们需要访问相册以保存漫画'" "$PLIST_PATH" || true
+            # Expose Documents to Files / iTunes; LiveContainer also provides
+            # access through the selected guest's data-container manager.
+            /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$PLIST_PATH"
+            /usr/libexec/PlistBuddy -c "Set :LSSupportsOpeningDocumentsInPlace true" "$PLIST_PATH" || /usr/libexec/PlistBuddy -c "Add :LSSupportsOpeningDocumentsInPlace bool true" "$PLIST_PATH"
             
             # 打印出来看看改成功没有
             cat "$PLIST_PATH"

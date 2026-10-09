@@ -2,7 +2,7 @@ use std::{io::Write, sync::OnceLock};
 
 use anyhow::Context;
 use notify::{RecommendedWatcher, Watcher};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_specta::Event;
 use tracing::{Level, Subscriber};
 use tracing_appender::{
@@ -220,9 +220,6 @@ async fn file_log_watcher(app: AppHandle) {
 }
 
 pub fn logs_dir(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .context("获取app_data_dir目录失败")?;
+    let app_data_dir = crate::storage::data_dir(app).context("获取app_data_dir目录失败")?;
     Ok(app_data_dir.join("日志"))
 }

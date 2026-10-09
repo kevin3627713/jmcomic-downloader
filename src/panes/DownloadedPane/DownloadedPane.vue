@@ -5,7 +5,7 @@ import DownloadedComicCard from './components/DownloadedComicCard.vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { PhFolderOpen, PhArrowClockwise } from '@phosphor-icons/vue'
 import { useStore } from '../../store.ts'
-import { DropdownOption, NIcon, useMessage } from 'naive-ui'
+import { DropdownOption, NIcon } from 'naive-ui'
 import { SelectionArea, SelectionEvent } from '@viselect/vue'
 import { PhChecks, PhCheck, PhX } from '@phosphor-icons/vue'
 import UpdateDownloadedComicsButton from './components/UpdateDownloadedComicsButton.vue'
@@ -18,7 +18,7 @@ const { exportComic } = useComicExport()
 const bulkExporting = ref(false)
 const managing = ref(false)
 const refreshing = ref(false)
-const message = useMessage()
+const libraryError = ref('')
 let refreshRequest = 0
 
 const selectedIds = ref<Set<number>>(new Set())
@@ -65,14 +65,20 @@ async function refreshLibrary() {
   const request = ++refreshRequest
   refreshing.value = true
   try {
-    const comics = await commands.getDownloadedComics()
+    const result = await commands.getDownloadedComics()
     if (request !== refreshRequest) return
+    if (result.status === 'error') {
+      libraryError.value = result.error.err_message
+      return
+    }
+    libraryError.value = ''
+    const comics = result.data
     downloadedComics.value = comics
     const ids = new Set(comics.map((comic) => comic.id))
     checkedIds.value = new Set([...checkedIds.value].filter((id) => ids.has(id)))
     selectedIds.value = new Set([...selectedIds.value].filter((id) => ids.has(id)))
   } catch (error) {
-    message.error(String(error))
+    if (request === refreshRequest) libraryError.value = String(error)
   } finally {
     if (request === refreshRequest) refreshing.value = false
   }
@@ -289,11 +295,17 @@ function useDropdown() {
         {{ checkedIds.size && checkedIds.size === currentPageComics.length ? '取消全选' : '全选本页' }}
       </button>
     </div>
-    <div v-if="!downloadedComics.length" class="empty-state">
+    <div v-if="libraryError" class="library-storage-error" role="alert">
+      <strong>书库读取失败</strong>
+      <p>{{ libraryError }}</p>
+      <p>请在设置的“存储位置”确认目录，并检查 LiveContainer 当前选中的数据容器。</p>
+      <button class="library-toolbar-button" :disabled="refreshing" @click="refreshLibrary">重新读取书库</button>
+    </div>
+    <div v-if="!downloadedComics.length && !libraryError" class="empty-state">
       <n-empty description="书库还没有漫画，下载完成后会显示在这里" />
     </div>
     <component
-      v-else
+      v-else-if="downloadedComics.length"
       :is="isMobile ? 'div' : SelectionArea"
       class="library-list selection-container flex-1 min-h-0"
       ref="selectionAreaRef"

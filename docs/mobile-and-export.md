@@ -41,6 +41,16 @@ PDF / CBZ 逐章生成，减少同时解码多个章节的内存压力。写完�
 
 后端根据当前配置中的下载目录和漫画元数据 ID 解析目标，检查所有待删路径后才开始操作；拒绝根目录、越界路径、符号链接或目录联接，以及包含其他漫画元数据的目录。删除与同本漫画的下载、导出共享读写锁：排队、暂停和仍未退出的图片下载任务也会阻止删除，取消后须等实际写入任务退出。删除进行时阻止新增下载和导出。遇到文件占用或权限错误会提示失败并刷新书库，确认框保持打开；系统删除不是跨文件事务，已经成功删除的文件无法自动恢复。
 
+## iOS / LiveContainer 存储
+
+iOS 的持久文件现在放在当前应用数据容器的 `Documents` 中：`漫画下载` 保存原图和章节、漫画元数据，`漫画导出` 保存 PDF / CBZ，`config.json` 保存配置，`日志` 保存新日志。Windows 的默认位置和自定义目录保持原样。
+
+每次启动从当前运行环境获取 Documents，配置中的下载、导出目录保存为相对路径，不保存系统沙盒或 LiveContainer 数据容器的 UUID。兼容旧版 `Library/Application Support/com.lanyeeee.jmcomic-downloader` 中的配置；旧绝对路径只用于识别相对目录，迁移源始终重建在当前应用容器内。先保留旧配置副本 `Documents/config.before-documents-migration.json`，再将当前容器内现存的旧下载、导出目录通过文件系统重命名移到 Documents。旧位置不存在时创建可写的新目录；升级不会凭空恢复已经丢失、被删除或位于其他未选中容器的文件。
+
+Documents 中已有不同漫画时可以合并目录；同名文件保持两份，在设置中显示迁移未完成的原因，不覆盖文件，也不阻止访问新的 Documents 目录。中断后可在下次启动继续迁移；旧配置文件留在原处，新启动优先使用 Documents 中的配置。配置采用原子写入，保存失败不会提前替换内存配置。启动检查下载、导出目录的可写性；书库扫描权限错误会展示错误和重试按钮，并保留已加载列表，不再把失败当作空书库。
+
+设置页显示可长按复制的实际下载、导出和配置路径。工作流为 IPA 设置 `UIFileSharingEnabled` 和 `LSSupportsOpeningDocumentsInPlace`；LiveContainer 内的文件入口以当前选中的应用数据容器为准。真机应覆盖安装到原应用、原数据容器，随后确认设置中的路径确实属于当前运行的容器，并验证重启后的下载与导出记录。
+
 ## iOS 原生文件操作
 
 本地插件位于 `src-tauri/plugins`，通过目标平台依赖仅在 iOS 注册。Rust 的 `open_exported_files` 检查导出目录、文件类型及可读文件，再调用 Swift 插件。Swift 在主线程展示 Quick Look 或 `UIActivityViewController`；iPad 使用 popover 锚点。
@@ -64,7 +74,7 @@ cd ..
 pnpm tauri build --no-bundle
 ```
 
-Windows 上 Rust 默认回归共 22 项，覆盖图片清单、损坏图片、单章多格式 PDF、合并页序、导出失败保留旧文件、成功替换旧文件、无效绘制引用、重复导出保护、历史零页 PDF 拒绝、从磁盘刷新滞后的章节完成状态，以及 PDF / CBZ 独立删除、整本删除、危险路径拒绝、下载与删除互斥、取消后等待 Rayon 图片写入结束、删除后清除章节状态，以及删除期间阻止书库刷新迁移旧元数据。Unix 另有符号链接拒绝测试。删除测试仅使用临时目录中的虚构字节文件。设置 `JM_EXPORT_TEST_DIR` 会保留合成的单章样例 PDF，便于用独立阅读器检查。
+Windows 上 Rust 默认回归共 31 项，覆盖图片清单、损坏图片、单章多格式 PDF、合并页序、导出失败保留旧文件、成功替换旧文件、无效绘制引用、重复导出保护、历史零页 PDF 拒绝、从磁盘刷新滞后的章节完成状态，以及 PDF / CBZ 独立删除、整本删除、危险路径拒绝、下载与删除互斥、取消后等待 Rayon 图片写入结束、删除后清除章节状态，以及删除期间阻止书库刷新迁移旧元数据。另验证 Documents 迁移、同名文件保留、旧目录不存在、两层容器路径变化、配置优先级、目录越界拒绝，以及桌面目录保持原样。Unix 另有符号链接拒绝测试。删除和迁移测试仅使用临时目录中的虚构字节文件。设置 `JM_EXPORT_TEST_DIR` 会保留合成的单章样例 PDF，便于用独立阅读器检查。
 
 真实本地文件诊断单独标记为 ignored，不会被默认测试读取。需要显式设置 `JM_LOCAL_COMIC_DIR`、`JM_LOCAL_EXPORT_DIR` 后，在 `src-tauri` 目录运行：
 
@@ -105,6 +115,8 @@ npx --yes --package @playwright/cli playwright-cli -s=jm-viewport close
 在预览地址加 `?platform=windows` 可检查桌面 UI，加 `?books=30` 可检查书库翻页。每次更改地址后需要重新运行 fixture 脚本。
 
 `scripts/ui-library-files.js` 在独立、默认两本漫画的 fixture 会话中执行，检查 320 / 390 像素宽卡片、短横屏菜单、取消删除、PDF / CBZ 独立删除、再次导出、下载中拒绝删除、等待期间防止重复提交、整本删除后的勾选清理和空书库。删除桥接只修改虚构数据，不操作本机文件。截图位于 `output/playwright/library-*.png`。
+
+`scripts/ui-storage.js` 在独立 fixture 会话中验证权限失败提示、重试、保留已加载书库、实际 Documents 路径展示，以及 320 / 390 像素宽和短横屏下的设置布局；存储位置读取失败时其他设置仍能保存。截图位于 `output/playwright/storage-*.png`，仅包含虚构目录和漫画。
 
 桌面回归脚本 `scripts/ui-desktop.js` 在 `?platform=windows` 的 fixture 初始化之后执行，检查 800×600 和 1280×800 下的章节操作与导出。
 

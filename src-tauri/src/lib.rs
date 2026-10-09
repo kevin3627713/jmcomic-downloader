@@ -24,6 +24,7 @@ mod jm_client;
 mod library;
 mod logger;
 mod responses;
+mod storage;
 mod types;
 mod utils;
 
@@ -38,6 +39,7 @@ pub fn run() {
         .commands(tauri_specta::collect_commands![
             greet,
             get_config,
+            get_storage_info,
             save_config,
             login,
             search,
@@ -102,9 +104,7 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
 
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
+            let app_data_dir = storage::data_dir(app.handle())
                 .context("failed to get app data dir")?;
 
             std::fs::create_dir_all(&app_data_dir).context(format!(

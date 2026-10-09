@@ -11,18 +11,18 @@ use tauri_specta::Event;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::errors::{CommandError, CommandResult};
 use crate::events::{DownloadAllFavoritesEvent, UpdateDownloadedComicsEvent};
-use crate::extensions::{AnyhowErrorToStringChain, AppHandleExt, WalkDirEntryExt};
+use crate::extensions::{AnyhowErrorToStringChain, AppHandleExt};
 use crate::responses::{GetUserProfileRespData, GetWeeklyInfoRespData};
 use crate::types::{
     ChapterInfo, Comic, ComicInFavorite, ComicInSearch, ComicInWeekly, FavoriteSort,
     GetFavoriteResult, GetWeeklyResult, SearchResultVariant, SearchSort,
 };
 use crate::{export, logger, utils};
+use tauri::Manager;
 
 #[tauri::command]
 #[specta::specta]
@@ -37,10 +37,36 @@ pub fn get_config(app: AppHandle) -> Config {
     app.get_config().read().clone()
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn get_storage_info(app: AppHandle) -> CommandResult<crate::storage::StorageInfo> {
+    let root = crate::storage::data_dir(&app)
+        .map_err(|error| CommandError::from("读取存储位置失败", error))?;
+    let config = app.get_config();
+    let config = config.read();
+    Ok(crate::storage::StorageInfo {
+        download_dir: config.download_dir.clone(),
+        export_dir: config.export_dir.clone(),
+        config_path: root.join("config.json"),
+        migration_warnings: app.state::<crate::storage::MigrationWarnings>().0.clone(),
+    })
+}
+
 #[tauri::command(async)]
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
-pub fn save_config(app: AppHandle, config: Config) -> CommandResult<()> {
+pub fn save_config(app: AppHandle, mut config: Config) -> CommandResult<()> {
+    if cfg!(target_os = "ios") {
+        let root = crate::storage::data_dir(&app)
+            .map_err(|error| CommandError::from("读取存储位置失败", error))?;
+        let legacy = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| CommandError::from("读取旧存储位置失败", error))?;
+        config
+            .resolve_documents(&root, &legacy)
+            .map_err(|error| CommandError::from("保存存储位置失败", error))?;
+    }
     let config_state = app.get_config();
     let jm_client = app.get_jm_client();
 
@@ -56,10 +82,10 @@ pub fn save_config(app: AppHandle, config: Config) -> CommandResult<()> {
 
     {
         let mut config_state = config_state.write();
-        *config_state = config;
-        config_state
+        config
             .save(&app)
             .map_err(|err| CommandError::from("保存配置失败", err))?;
+        *config_state = config;
         tracing::debug!("保存配置成功");
     }
 
@@ -425,7 +451,7 @@ pub async fn update_downloaded_comics(app: AppHandle) -> CommandResult<()> {
     let download_manager = app.get_download_manager();
 
     // 从下载目录中获取已下载的漫画
-    let downloaded_comics = get_downloaded_comics(app.clone());
+    let downloaded_comics = get_downloaded_comics(app.clone())?;
 
     let total = downloaded_comics.len() as i64;
     let interval_sec = config.read().update_downloaded_comics_interval_sec;
@@ -543,20 +569,13 @@ pub async fn sync_favorite_folder(app: AppHandle) -> CommandResult<()> {
 #[allow(clippy::too_many_lines)]
 #[tauri::command(async)]
 #[specta::specta]
-pub fn get_downloaded_comics(app: AppHandle) -> Vec<Comic> {
+pub fn get_downloaded_comics(app: AppHandle) -> CommandResult<Vec<Comic>> {
     let download_dir = app.get_config().read().download_dir.clone();
     // 遍历下载目录，获取所有漫画元数据文件的路径和修改时间
     let mut metadata_path_with_modify_time = Vec::new();
-    for entry in WalkDir::new(&download_dir)
-        .into_iter()
-        .filter_map(Result::ok)
+    for path in crate::storage::metadata_paths(&download_dir)
+        .map_err(|error| CommandError::from("读取书库失败", error))?
     {
-        let path = entry.path();
-
-        if !entry.is_comic_metadata() {
-            continue;
-        }
-
         let metadata = match path
             .metadata()
             .map_err(anyhow::Error::from)
@@ -651,7 +670,7 @@ pub fn get_downloaded_comics(app: AppHandle) -> Vec<Comic> {
         unique_comics.push(chosen_comic);
     }
 
-    unique_comics
+    Ok(unique_comics)
 }
 
 #[tauri::command(async)]
