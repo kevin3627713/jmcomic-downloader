@@ -220,6 +220,6 @@ async fn file_log_watcher(app: AppHandle) {
 }
 
 pub fn logs_dir(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
-    let app_data_dir = crate::storage::data_dir(app).context("获取app_data_dir目录失败")?;
+    let app_data_dir = crate::storage::config_dir(app).context("获取配置目录失败")?;
     Ok(app_data_dir.join("日志"))
 }

@@ -40,7 +40,7 @@ pub fn get_config(app: AppHandle) -> Config {
 #[tauri::command]
 #[specta::specta]
 pub fn get_storage_info(app: AppHandle) -> CommandResult<crate::storage::StorageInfo> {
-    let root = crate::storage::data_dir(&app)
+    let root = crate::storage::config_dir(&app)
         .map_err(|error| CommandError::from("读取存储位置失败", error))?;
     let config = app.get_config();
     let config = config.read();

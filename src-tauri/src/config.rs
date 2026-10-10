@@ -51,25 +51,25 @@ fn default_api_domains() -> Vec<String> {
 
 impl Config {
     pub fn new(app: &AppHandle) -> anyhow::Result<Self> {
-        let root = crate::storage::data_dir(app)?;
-        let legacy = if cfg!(target_os = "ios") {
-            Some(app.path().app_data_dir()?)
+        let root = crate::storage::config_dir(app)?;
+        let documents = if cfg!(target_os = "ios") {
+            Some(crate::storage::data_dir(app)?)
         } else {
             None
         };
-        let (config, warnings) = Self::load_with_warnings(&root, legacy.as_deref())?;
+        let (config, warnings) = Self::load_with_warnings(&root, documents.as_deref())?;
         app.manage(crate::storage::MigrationWarnings(warnings));
         Ok(config)
     }
 
     #[cfg(test)]
-    fn load(root: &Path, legacy: Option<&Path>) -> anyhow::Result<Self> {
-        Ok(Self::load_with_warnings(root, legacy)?.0)
+    fn load(root: &Path, documents: Option<&Path>) -> anyhow::Result<Self> {
+        Ok(Self::load_with_warnings(root, documents)?.0)
     }
 
     fn load_with_warnings(
         root: &Path,
-        legacy: Option<&Path>,
+        documents: Option<&Path>,
     ) -> anyhow::Result<(Self, Vec<String>)> {
         let mut warnings = Vec::new();
         std::fs::create_dir_all(root)?;
@@ -83,39 +83,40 @@ impl Config {
             }
         };
         let mut original = read_config(&root.join("config.json"))?;
-        let mut imported_legacy_config = false;
+        let mut imported_documents_config = false;
         if original.is_none() {
-            if let Some(legacy) = legacy {
-                original = read_config(&legacy.join("config.json"))?;
-                imported_legacy_config = original.is_some();
+            if let Some(documents) = documents {
+                original = read_config(&documents.join("config.json"))?;
+                imported_documents_config = original.is_some();
             }
         }
+        let media_root = documents.unwrap_or(root);
         let mut config: Self = if let Some(config_string) = &original {
             match serde_json::from_str(&config_string) {
                 // 如果能够直接解析为Config，则直接返回
                 Ok(config) => config,
                 // 否则，将默认配置与文件中已有的配置合并
                 // 以免新版本添加了新的配置项，用户升级到新版本后，所有配置项都被重置
-                Err(_) => Config::merge_config(&config_string, root),
+                Err(_) => Config::merge_config(&config_string, media_root),
             }
         } else {
-            Config::default(root)
+            Config::default(media_root)
         };
-        if let Some(legacy) = legacy {
+        if let Some(documents) = documents {
             // Keep settings, but migrate media only from this active guest.
             let mut sources = vec![PathBuf::from("漫画下载"), PathBuf::from("漫画导出")];
-            let mut needs_backup = imported_legacy_config;
+            let mut needs_backup = imported_documents_config;
             for stored in [&config.download_dir, &config.export_dir] {
-                if let Some(suffix) = crate::storage::legacy_relative(stored, legacy) {
+                if let Some(suffix) = crate::storage::legacy_relative(stored, root) {
                     needs_backup = true;
                     // Reject traversal before inspecting or moving anything.
-                    crate::storage::documents_path(stored, root, legacy)?;
+                    crate::storage::documents_path(stored, documents, root)?;
                     if !sources.contains(&suffix) {
                         sources.push(suffix);
                     }
                 }
             }
-            config.resolve_documents(root, legacy)?;
+            config.resolve_documents(documents, root)?;
             if let Some(original) = original.filter(|_| needs_backup) {
                 use std::io::Write;
                 let backup = root.join("config.before-documents-migration.json");
@@ -134,7 +135,7 @@ impl Config {
             }
             for suffix in sources {
                 if let Err(error) =
-                    crate::storage::migrate_directory(&legacy.join(&suffix), &root.join(&suffix))
+                    crate::storage::migrate_directory(&root.join(&suffix), &documents.join(&suffix))
                 {
                     // Keep both conflicting files and allow access to Documents.
                     warnings.push(format!("旧文件迁移未完成：{error:#}"));
@@ -143,7 +144,7 @@ impl Config {
             crate::storage::prepare_directory(&config.download_dir)?;
             crate::storage::prepare_directory(&config.export_dir)?;
         }
-        config.save_in(root, legacy.is_some())?;
+        config.save_in(root, documents)?;
         Ok((config, warnings))
     }
 
@@ -154,16 +155,21 @@ impl Config {
     }
 
     pub fn save(&self, app: &AppHandle) -> anyhow::Result<()> {
-        self.save_in(&crate::storage::data_dir(app)?, cfg!(target_os = "ios"))
+        let documents = if cfg!(target_os = "ios") {
+            Some(crate::storage::data_dir(app)?)
+        } else {
+            None
+        };
+        self.save_in(&crate::storage::config_dir(app)?, documents.as_deref())
     }
 
-    fn save_in(&self, root: &Path, documents: bool) -> anyhow::Result<()> {
+    fn save_in(&self, root: &Path, documents: Option<&Path>) -> anyhow::Result<()> {
         let config_path = root.join("config.json");
         // Don't save runtime-updated api_domains to config file
         let mut saveable = self.clone();
-        if documents {
-            saveable.download_dir = crate::storage::saved_path(&self.download_dir, root)?;
-            saveable.export_dir = crate::storage::saved_path(&self.export_dir, root)?;
+        if let Some(documents) = documents {
+            saveable.download_dir = crate::storage::saved_path(&self.download_dir, documents)?;
+            saveable.export_dir = crate::storage::saved_path(&self.export_dir, documents)?;
         }
         saveable.api_domains = FALLBACK_API_DOMAINS.iter().map(|s| s.to_string()).collect();
         let config_string = serde_json::to_string_pretty(&saveable)?;
@@ -322,15 +328,18 @@ mod tests {
         fs::create_dir_all(export.join("cbz")).unwrap();
         fs::write(export.join("fictional book.pdf"), b"fictional pdf").unwrap();
         fs::write(export.join("cbz/chapter.cbz"), b"fictional cbz").unwrap();
-        let loaded = Config::load(&documents, Some(&legacy)).unwrap();
+        let loaded = Config::load(&legacy, Some(&documents)).unwrap();
         assert_eq!(loaded.download_dir, documents.join("漫画下载"));
         assert_eq!(loaded.export_dir, documents.join("漫画导出"));
         assert_eq!(loaded.proxy_port, 8123);
         assert!(!legacy.join("漫画下载").exists());
         assert!(!legacy.join("漫画导出").exists());
-        assert_eq!(fs::read(legacy.join("config.json")).unwrap(), original);
+        assert_eq!(
+            fs::read(legacy.join("config.before-documents-migration.json")).unwrap(),
+            original
+        );
         let disk: serde_json::Value =
-            serde_json::from_slice(&fs::read(documents.join("config.json")).unwrap()).unwrap();
+            serde_json::from_slice(&fs::read(legacy.join("config.json")).unwrap()).unwrap();
         assert_eq!(disk["downloadDir"], "漫画下载");
         assert_eq!(disk["exportDir"], "漫画导出");
         let paths = crate::storage::metadata_paths(&loaded.download_dir).unwrap();
@@ -348,15 +357,16 @@ mod tests {
             crate::library::file_status(&loaded.download_dir, &loaded.export_dir, &comic).unwrap();
         assert!(files.has_pdf);
         assert_eq!(files.cbz_count, 1);
-        // Reopening reads Documents/config.json, not the old support config.
+        // Settings remain in Application Support; media stays in Documents.
+        assert!(!documents.join("config.json").exists());
         assert_eq!(
-            Config::load(&documents, Some(&legacy)).unwrap().proxy_port,
+            Config::load(&legacy, Some(&documents)).unwrap().proxy_port,
             8123
         );
     }
 
     #[test]
-    fn documents_config_survives_entire_container_move_and_takes_priority() {
+    fn support_config_rebases_media_and_survives_entire_container_move() {
         let temp = tempfile::tempdir().unwrap();
         let (first, legacy_first) = roots(
             &temp
@@ -368,17 +378,21 @@ mod tests {
                 .path()
                 .join("host-two/Documents/Data/Application/guest-two"),
         );
-        let mut config = Config::load(&first, Some(&legacy_first)).unwrap();
+        let mut config = Config::load(&legacy_first, Some(&first)).unwrap();
         config.proxy_port = 8124;
-        config.save_in(&first, true).unwrap();
+        config.save_in(&legacy_first, Some(&first)).unwrap();
         fs::create_dir_all(&second).unwrap();
-        fs::copy(first.join("config.json"), second.join("config.json")).unwrap();
         fs::create_dir_all(&legacy_second).unwrap();
-        Config::default(&legacy_second)
-            .save_in(&legacy_second, false)
+        fs::copy(
+            legacy_first.join("config.json"),
+            legacy_second.join("config.json"),
+        )
+        .unwrap();
+        Config::default(&second)
+            .save_in(&second, Some(&second))
             .unwrap();
         let book = fake_book(&second.join("漫画下载"));
-        let loaded = Config::load(&second, Some(&legacy_second)).unwrap();
+        let loaded = Config::load(&legacy_second, Some(&second)).unwrap();
         assert_eq!(loaded.proxy_port, 8124);
         assert_eq!(loaded.download_dir, second.join("漫画下载"));
         assert_eq!(
@@ -395,9 +409,9 @@ mod tests {
         Config::default(Path::new(
             "/old/Library/Application Support/com.lanyeeee.jmcomic-downloader",
         ))
-        .save_in(&legacy, false)
+        .save_in(&legacy, None)
         .unwrap();
-        let config = Config::load(&documents, Some(&legacy)).unwrap();
+        let config = Config::load(&legacy, Some(&documents)).unwrap();
         fs::write(config.download_dir.join("fictional write probe"), b"test").unwrap();
         assert!(config.export_dir.is_dir());
         assert!(crate::storage::metadata_paths(&config.download_dir)
@@ -411,7 +425,7 @@ mod tests {
         let mut config = Config::default(temp.path());
         config.download_dir = temp.path().join("custom downloads");
         config.export_dir = temp.path().join("custom exports");
-        config.save_in(temp.path(), false).unwrap();
+        config.save_in(temp.path(), None).unwrap();
         let loaded = Config::load(temp.path(), None).unwrap();
         assert_eq!(loaded.download_dir, config.download_dir);
         assert_eq!(loaded.export_dir, config.export_dir);
@@ -421,13 +435,13 @@ mod tests {
     fn unsafe_relative_path_is_rejected_before_migration_or_config_replacement() {
         let temp = tempfile::tempdir().unwrap();
         let (documents, legacy) = roots(temp.path());
-        fs::create_dir_all(&documents).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
         let mut config = Config::default(&documents);
         config.download_dir = PathBuf::from("../other-container");
         let original = serde_json::to_vec(&config).unwrap();
-        fs::write(documents.join("config.json"), &original).unwrap();
-        assert!(Config::load(&documents, Some(&legacy)).is_err());
-        assert_eq!(fs::read(documents.join("config.json")).unwrap(), original);
+        fs::write(legacy.join("config.json"), &original).unwrap();
+        assert!(Config::load(&legacy, Some(&documents)).is_err());
+        assert_eq!(fs::read(legacy.join("config.json")).unwrap(), original);
     }
 
     #[test]
@@ -440,12 +454,82 @@ mod tests {
         let new = documents.join("漫画导出/book/book.pdf");
         fs::write(&old, b"fictional old pdf").unwrap();
         fs::write(&new, b"fictional new pdf").unwrap();
-        let (config, warnings) = Config::load_with_warnings(&documents, Some(&legacy)).unwrap();
+        let (config, warnings) = Config::load_with_warnings(&legacy, Some(&documents)).unwrap();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("同名文件"));
         assert_eq!(fs::read(old).unwrap(), b"fictional old pdf");
         assert_eq!(fs::read(new).unwrap(), b"fictional new pdf");
         assert!(config.download_dir.is_dir());
-        assert!(documents.join("config.json").is_file());
+        assert!(legacy.join("config.json").is_file());
+    }
+
+    fn fake_network_profile(root: &Path) -> Config {
+        let mut config = Config::default(root);
+        config.username = "fictional user".into();
+        config.password = "fictional password".into();
+        config.proxy_mode = ProxyMode::Custom;
+        config.proxy_host = "127.0.0.1".into();
+        config.proxy_port = 8123;
+        config.api_domain_mode = ApiDomainMode::Custom;
+        config.custom_api_domain = "working.example.invalid".into();
+        config
+    }
+
+    fn assert_same_settings(actual: &Config, expected: &Config) {
+        let settings = |config: &Config| {
+            let mut value = serde_json::to_value(config).unwrap();
+            value.as_object_mut().unwrap().remove("downloadDir");
+            value.as_object_mut().unwrap().remove("exportDir");
+            value
+        };
+        assert_eq!(settings(actual), settings(expected));
+        assert_eq!(actual.get_api_domain(), expected.get_api_domain());
+    }
+
+    #[test]
+    fn original_support_settings_take_priority_over_documents_settings() {
+        let temp = tempfile::tempdir().unwrap();
+        let (documents, support) = roots(temp.path());
+        fs::create_dir_all(&support).unwrap();
+        fs::create_dir_all(&documents).unwrap();
+        let original = fake_network_profile(&support);
+        original.save_in(&support, None).unwrap();
+        Config::default(&documents)
+            .save_in(&documents, Some(&documents))
+            .unwrap();
+        let documents_bytes = fs::read(documents.join("config.json")).unwrap();
+        let loaded = Config::load(&support, Some(&documents)).unwrap();
+        assert_same_settings(&loaded, &original);
+        assert_eq!(loaded.download_dir, documents.join("漫画下载"));
+        assert_eq!(
+            fs::read(documents.join("config.json")).unwrap(),
+            documents_bytes
+        );
+        assert_same_settings(
+            &Config::load(&support, Some(&documents)).unwrap(),
+            &original,
+        );
+    }
+
+    #[test]
+    fn missing_support_config_imports_documents_settings_without_resetting_network_profile() {
+        let temp = tempfile::tempdir().unwrap();
+        let (documents, support) = roots(temp.path());
+        fs::create_dir_all(&documents).unwrap();
+        let original = fake_network_profile(&documents);
+        original.save_in(&documents, Some(&documents)).unwrap();
+        let source = fs::read(documents.join("config.json")).unwrap();
+        let loaded = Config::load(&support, Some(&documents)).unwrap();
+        assert_same_settings(&loaded, &original);
+        assert_eq!(fs::read(documents.join("config.json")).unwrap(), source);
+        assert_eq!(
+            fs::read(support.join("config.before-documents-migration.json")).unwrap(),
+            source
+        );
+        let persisted: Config =
+            serde_json::from_str(&fs::read_to_string(support.join("config.json")).unwrap())
+                .unwrap();
+        assert_same_settings(&persisted, &original);
+        assert_eq!(persisted.download_dir, Path::new("漫画下载"));
     }
 }

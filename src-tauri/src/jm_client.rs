@@ -358,6 +358,10 @@ impl JmClient {
         let ts = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         // 发送搜索请求
         let http_resp = self.jm_get(ApiPath::Search, Some(query), ts).await?;
+        let endpoint = format!(
+            "https://{}/search",
+            http_resp.url().host_str().unwrap_or("未知域名")
+        );
         // 检查http响应状态码
         let status = http_resp.status();
         let body = http_resp.text().await?;
@@ -366,7 +370,7 @@ impl JmClient {
         }
         // 尝试将body解析为JmResp
         let jm_resp = serde_json::from_str::<JmResp>(&body)
-            .context(format!("将body解析为JmResp失败: {body}"))?;
+            .with_context(|| format!("搜索接口 {endpoint} 返回无法解析的响应：{body}"))?;
         // 检查JmResp的code字段
         if jm_resp.code != 200 {
             return Err(anyhow!("搜索失败，预料之外的code: {jm_resp:?}"));

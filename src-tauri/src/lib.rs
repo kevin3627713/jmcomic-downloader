@@ -104,7 +104,7 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
 
-            let app_data_dir = storage::data_dir(app.handle())
+            let app_data_dir = storage::config_dir(app.handle())
                 .context("failed to get app data dir")?;
 
             std::fs::create_dir_all(&app_data_dir).context(format!(

@@ -114,7 +114,7 @@ async function showConfigInFileManager() {
           <h3>存储位置</h3>
           <p v-if="store.runtimePlatform === 'ios'" class="settings-note">
             漫画和导出文件保存在当前应用的 Documents 中。在 LiveContainer 的当前数据容器内打开 Documents
-            即可查找，也可长按下方路径复制。
+            即可查找。配置和日志保存在 Library 内，兼容旧版。可长按下方路径复制。
           </p>
           <p v-if="storageError" class="storage-error">{{ storageError }}</p>
           <template v-if="storageInfo">

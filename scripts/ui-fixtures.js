@@ -121,7 +121,7 @@ async (page) => {
           return null
         }
         if (command === 'get_config') return config
-        if (command === 'get_storage_info') return { downloadDir: config.downloadDir, exportDir: config.exportDir, configPath: '/current-container/Documents/config.json', migrationWarnings: [] }
+        if (command === 'get_storage_info') return { downloadDir: config.downloadDir, exportDir: config.exportDir, configPath: '/current-container/Library/Application Support/com.lanyeeee.jmcomic-downloader/config.json', migrationWarnings: [] }
         if (command === 'get_runtime_platform') return platform
         if (command === 'get_logs_dir_size') return 1024
         if (command === 'plugin:app|version') return '0.17.0'

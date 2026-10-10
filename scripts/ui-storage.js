@@ -16,7 +16,7 @@ async (page) => {
       }
       if (command === 'get_storage_info') {
         if (window.__JM_STORAGE_INFO_FAILURE__) throw { err_title: '读取存储位置失败', err_message: 'fictional storage information failure' }
-        return { downloadDir: `${root}/漫画下载`, exportDir: `${root}/漫画导出`, configPath: `${root}/config.json`, migrationWarnings: ['虚构迁移提示：同名文件已保留，请检查旧目录。'] }
+        return { downloadDir: `${root}/漫画下载`, exportDir: `${root}/漫画导出`, configPath: `${root.slice(0, -'/Documents'.length)}/Library/Application Support/com.lanyeeee.jmcomic-downloader/config.json`, migrationWarnings: ['虚构迁移提示：同名文件已保留，请检查旧目录。'] }
       }
       return original(command, args)
     }
@@ -46,10 +46,10 @@ async (page) => {
   await dialog.waitFor()
   const root = await page.evaluate(() => window.__JM_STORAGE_ROOT__)
   await dialog.getByText('虚构迁移提示：同名文件已保留，请检查旧目录。', { exact: true }).waitFor()
-  for (const [label, suffix] of [['漫画下载目录', '/漫画下载'], ['PDF / CBZ 导出目录', '/漫画导出'], ['配置文件位置', '/config.json']]) {
+  for (const [label, expected] of [['漫画下载目录', root + '/漫画下载'], ['PDF / CBZ 导出目录', root + '/漫画导出'], ['配置文件位置', root.slice(0, -'/Documents'.length) + '/Library/Application Support/com.lanyeeee.jmcomic-downloader/config.json']]) {
     const input = dialog.getByRole('textbox', { name: label, exact: true })
     await input.waitFor()
-    if (await input.inputValue() !== root + suffix || await input.getAttribute('readonly') === null) throw new Error(`Incorrect or editable storage field: ${label}`)
+    if (await input.inputValue() !== expected || await input.getAttribute('readonly') === null) throw new Error(`Incorrect or editable storage field: ${label}`)
   }
   for (const size of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(size)

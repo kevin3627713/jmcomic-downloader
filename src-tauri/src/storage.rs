@@ -28,6 +28,11 @@ pub fn data_dir(app: &AppHandle) -> Result<PathBuf> {
     Ok(app.path().app_data_dir()?)
 }
 
+/// Keep private settings at the location used by previous working versions.
+pub fn config_dir(app: &AppHandle) -> Result<PathBuf> {
+    Ok(app.path().app_data_dir()?)
+}
+
 fn relative(path: &Path) -> Result<PathBuf> {
     ensure!(
         path.components()
