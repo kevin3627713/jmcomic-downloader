@@ -65,7 +65,9 @@ xcrun simctl launch --console "$SIMULATOR" com.lanyeeee.startup-rotation-test \
 LAUNCH_PID=$!
 CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR" com.lanyeeee.startup-rotation-test data)
 RESULT="$CONTAINER/Documents/startup-rotation-result.json"
-for ((attempt = 0; attempt < 60; attempt++)); do
+# A freshly booted hosted simulator can take over 30s to launch its first app
+# and WebKit process. Keep the result assertions, but allow 90s for startup.
+for ((attempt = 0; attempt < 180; attempt++)); do
   if [ -f "$RESULT" ]; then break; fi
   sleep 0.5
 done
