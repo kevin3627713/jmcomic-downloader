@@ -22,7 +22,7 @@ use crate::download_manager::IMAGE_DOMAIN;
 use crate::extensions::{AnyhowErrorToStringChain, AppHandleExt};
 use crate::responses::{
     GetChapterRespData, GetComicRespData, GetFavoriteRespData, GetUserProfileRespData,
-    GetWeeklyInfoRespData, GetWeeklyRespData, JmResp, RedirectRespData, SearchResp, SearchRespData,
+    GetWeeklyInfoRespData, GetWeeklyRespData, JmResp, SearchResp, SearchResponseData,
     ToggleFavoriteRespData,
 };
 use crate::types::{FavoriteSort, ProxyMode, SearchSort};
@@ -382,20 +382,13 @@ impl JmClient {
             .context(format!("搜索失败，data字段不是字符串: {jm_resp:?}"))?;
         // 解密data字段
         let data = decrypt_data(ts, data)?;
-        // 尝试将解密后的数据解析为 RedirectRespData
-        if let Ok(redirect_resp_data) = serde_json::from_str::<RedirectRespData>(&data) {
-            let comic_resp_data = self
-                .get_comic(redirect_resp_data.redirect_aid.parse()?)
-                .await?;
-            return Ok(SearchResp::ComicRespData(Box::new(comic_resp_data)));
+        match SearchResponseData::parse(&data)? {
+            SearchResponseData::Redirect(redirect) => {
+                let comic_resp_data = self.get_comic(redirect.redirect_aid).await?;
+                Ok(SearchResp::ComicRespData(Box::new(comic_resp_data)))
+            }
+            SearchResponseData::Results(results) => Ok(SearchResp::SearchRespData(results)),
         }
-        // 尝试将解密后的data字段解析为 SearchRespData
-        if let Ok(search_resp_data) = serde_json::from_str::<SearchRespData>(&data) {
-            return Ok(SearchResp::SearchRespData(search_resp_data));
-        }
-        Err(anyhow!(
-            "将解密后的数据解析为SearchRespData或RedirectRespData失败: {data}"
-        ))
     }
 
     pub async fn get_comic(&self, aid: i64) -> anyhow::Result<GetComicRespData> {
