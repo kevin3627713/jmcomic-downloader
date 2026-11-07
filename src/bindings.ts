@@ -189,6 +189,10 @@ async exportPdf(comic: Comic) : Promise<Result<null, CommandError>> {
     else return { status: "error", error: e  as any };
 }
 },
+async exportPdfSelection(comic: Comic, chapterIds: number[] | null, merge: boolean) : Promise<Result<string[], CommandError>> {
+    try { return { status: "ok", data: await TAURI_INVOKE("export_pdf_selection", { comic, chapterIds, merge }) }; }
+    catch (error) { if (error instanceof Error) throw error; return { status: "error", error: error as CommandError }; }
+},
 async getComicPdfPath(comic: Comic) : Promise<Result<string | null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_comic_pdf_path", { comic }) };

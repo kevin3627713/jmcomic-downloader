@@ -23,6 +23,7 @@ mod extensions;
 mod jm_client;
 mod library;
 mod logger;
+mod pdf_selection;
 mod responses;
 mod storage;
 mod types;
@@ -62,6 +63,7 @@ pub fn run() {
             delete_comic_files,
             export_cbz,
             export_pdf,
+            export_pdf_selection,
             get_comic_pdf_path,
             get_comic_cbz_paths,
             open_exported_files,
@@ -104,8 +106,8 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
 
-            let app_data_dir = storage::config_dir(app.handle())
-                .context("failed to get app data dir")?;
+            let app_data_dir =
+                storage::config_dir(app.handle()).context("failed to get app data dir")?;
 
             std::fs::create_dir_all(&app_data_dir).context(format!(
                 "failed to create app data dir: {}",

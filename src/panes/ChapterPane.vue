@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch, watchEffect } from 'vue'
 import { ChapterInfo, commands, DownloadTaskState } from '../bindings.ts'
 import { useStore } from '../store.ts'
 import { PhFolderOpen } from '@phosphor-icons/vue'
+import PdfSelectionSheet from '../components/PdfSelectionSheet.vue'
 import IconButton from '../components/IconButton.vue'
 import { useComicExport } from '../composables/useComicExport'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -13,8 +14,14 @@ const store = useStore()
 const isMobile = useIsMobile()
 const message = useMessage()
 
-const { exportComic, openPdf } = useComicExport()
+const { exportComic } = useComicExport()
 const scheduling = ref(false)
+const pdfShowing = ref(false)
+const pdfAction = ref<'read' | 'export'>('read')
+function showPdf(action: 'read' | 'export') {
+  pdfAction.value = action
+  pdfShowing.value = true
+}
 
 const dropdownX = ref<number>(0)
 const dropdownY = ref<number>(0)
@@ -97,6 +104,7 @@ const chapterInfos = computed<(ChapterInfo & { state: State })[]>(() => {
 watch(
   () => store.pickedComic?.id,
   () => {
+    pdfShowing.value = false
     checkedIds.value = []
     selectedIds.value.clear()
     selectionAreaRef.value?.selection?.clearSelection()
@@ -236,7 +244,7 @@ function isDownloading(state: State) {
         </div>
       </div>
       <div class="chapter-tools">
-        <span>已选 {{ checkedIds.length }} 章</span>
+        <span>待下载 · 已选 {{ checkedIds.length }} 章</span>
         <n-button :disabled="!availableIds.length" @click="toggleAll">
           {{ checkedIds.length && checkedIds.length === availableIds.length ? '取消全选' : '全选' }}
         </n-button>
@@ -281,12 +289,10 @@ function isDownloading(state: State) {
           @click="downloadChapters">
           下载所选 {{ checkedIds.length ? `(${checkedIds.length})` : '' }}
         </n-button>
-        <n-button v-if="downloadedCount" @click="openPdf(store.pickedComic)">查看 PDF</n-button>
+        <n-button v-if="downloadedCount" @click="showPdf('read')">选择章节阅读</n-button>
         <div v-if="downloadedCount" class="action-row w-full">
-          <n-button
-            :loading="store.exportingComics.has(`${store.pickedComic.id}:pdf`)"
-            @click="exportComic(store.pickedComic, 'pdf', true)">
-            导出 PDF
+          <n-button :loading="store.exportingComics.has(`${store.pickedComic.id}:pdf`)" @click="showPdf('export')">
+            选择范围导出 PDF
           </n-button>
           <n-button
             :loading="store.exportingComics.has(`${store.pickedComic.id}:cbz`)"
@@ -299,6 +305,11 @@ function isDownloading(state: State) {
         </div>
       </div>
     </template>
+    <PdfSelectionSheet
+      v-if="store.pickedComic"
+      v-model:show="pdfShowing"
+      :comic="store.pickedComic"
+      :initial-action="pdfAction" />
     <n-dropdown
       v-if="!isMobile"
       placement="bottom-start"

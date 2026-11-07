@@ -293,112 +293,145 @@ impl Drop for PdfMergeErrorEventGuard {
     }
 }
 
-#[allow(clippy::cast_possible_truncation)]
 pub fn pdf(app: &AppHandle, comic: &Comic) -> anyhow::Result<()> {
-    let _export_guard = ExportGuard::acquire(comic.get_comic_export_dir(app)?.join("pdf"))?;
-    let downloaded_chapter_infos: Vec<&ChapterInfo> = comic
+    pdf_selection(app, comic, None, true).map(|_| ())
+}
+
+/// Render chapter files, optionally only as temporary merge inputs. The caller owns
+/// the temporary directory, so errors cannot leave hidden intermediate PDFs behind.
+fn render_chapters(
+    chapters: &[&ChapterInfo],
+    directory: &Path,
+    mut progress: impl FnMut(u32),
+) -> anyhow::Result<Vec<PathBuf>> {
+    std::fs::create_dir_all(directory)?;
+    let mut paths = Vec::new();
+    for (index, chapter) in chapters.iter().enumerate() {
+        let images = chapter_images(chapter)?;
+        let name = chapter.get_chapter_download_dir_name()?;
+        let path = directory.join(format!("{name}.pdf"));
+        ensure!(!paths.contains(&path), "章节导出文件名重复，请检查下载目录");
+        create_pdf(images, &path)
+            .context(format!("章节 {} 创建 PDF 失败", chapter.chapter_title))?;
+        paths.push(path);
+        progress(u32::try_from(index + 1)?);
+    }
+    Ok(paths)
+}
+
+pub fn pdf_selection(
+    app: &AppHandle,
+    comic: &Comic,
+    chapter_ids: Option<&[i64]>,
+    merge: bool,
+) -> anyhow::Result<Vec<PathBuf>> {
+    let comic_export_dir = comic.get_comic_export_dir(app)?;
+    let _export_guard = ExportGuard::acquire(comic_export_dir.join("pdf"))?;
+    let selection_data = comic
         .chapter_infos
         .iter()
-        .filter(|chapter_info| chapter_info.is_downloaded.unwrap_or(false))
-        .collect();
+        .map(|chapter| {
+            (
+                chapter.chapter_id,
+                chapter.order,
+                chapter.is_downloaded == Some(true),
+            )
+        })
+        .collect::<Vec<_>>();
+    let indices = crate::pdf_selection::select_chapters(&selection_data, chapter_ids)
+        .map_err(|message| anyhow!(message))?;
+    let chapters = indices
+        .into_iter()
+        .map(|index| &comic.chapter_infos[index])
+        .collect::<Vec<_>>();
+    // Whole-book always means one complete PDF, regardless of a stale client toggle.
+    let merge = chapter_ids.is_none() || (merge && chapters.len() > 1);
+    std::fs::create_dir_all(&comic_export_dir)?;
+    let temporary = if merge {
+        Some(
+            tempfile::Builder::new()
+                .prefix(".pdf-build-")
+                .tempdir_in(&comic_export_dir)?,
+        )
+    } else {
+        None
+    };
+    let chapter_export_dir = comic_export_dir.join("pdf");
+    let render_dir = temporary
+        .as_ref()
+        .map_or(chapter_export_dir.as_path(), |dir| dir.path());
     let event_uuid = uuid::Uuid::new_v4().to_string();
-    // 发送开始创建pdf事件
     let _ = ExportPdfEvent::CreateStart {
         uuid: event_uuid.clone(),
         comic_title: comic.name.clone(),
-        total: downloaded_chapter_infos.len() as u32,
+        total: u32::try_from(chapters.len())?,
     }
     .emit(app);
-    // 如果success为false，drop时发送CreateError事件
-    let mut create_error_event_guard = PdfCreateErrorEventGuard {
+    let mut create_guard = PdfCreateErrorEventGuard {
         uuid: event_uuid.clone(),
         app: app.clone(),
         success: false,
     };
-    ensure!(
-        !downloaded_chapter_infos.is_empty(),
-        "没有已下载完成的章节可导出"
-    );
-    // 用来记录创建pdf的进度
-    let current = Arc::new(AtomicU32::new(0));
-
-    let extension = ExportArchive::Pdf.extension();
-    let comic_export_dir = comic
-        .get_comic_export_dir(app)
-        .context("获取导出目录失败")?;
-    let chapter_export_dir = comic_export_dir.join(extension);
-    // 保证导出目录存在
-    std::fs::create_dir_all(&chapter_export_dir)
-        .context(format!("创建目录`{}`失败", chapter_export_dir.display()))?;
-    let mut chapter_with_pdf_path = Vec::new();
-    // Process chapters sequentially to bound image decoding memory on iOS.
-    for chapter_info in downloaded_chapter_infos {
-        let chapter_title = &chapter_info.chapter_title;
-
-        let image_paths = chapter_images(chapter_info)?;
-
-        let chapter_download_dir_name = &chapter_info
-            .get_chapter_download_dir_name()
-            .context(format!("章节`{chapter_title}`获取章节下载目录名失败"))?;
-        // 创建pdf
-        let save_path = chapter_export_dir.join(format!("{chapter_download_dir_name}.{extension}"));
-
-        create_pdf(image_paths, &save_path).context(format!("章节`{chapter_title}`创建pdf失败"))?;
-
-        chapter_with_pdf_path.push((chapter_info, save_path));
-        // 更新创建pdf的进度
-        let current = current.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        // 发送创建pdf进度事件
+    let chapter_paths = render_chapters(&chapters, render_dir, |current| {
         let _ = ExportPdfEvent::CreateProgress {
             uuid: event_uuid.clone(),
             current,
         }
         .emit(app);
-    }
-
-    chapter_with_pdf_path.sort_by(|(a, _), (b, _)| a.order.cmp(&b.order));
-    let chapter_pdf_paths: Vec<PathBuf> = chapter_with_pdf_path
-        .into_iter()
-        .map(|(_, pdf_path)| pdf_path)
-        .collect();
-
-    // 标记为成功，后面drop时就不会发送CreateError事件
-    create_error_event_guard.success = true;
-    // 发送创建pdf完成事件
+    })?;
+    create_guard.success = true;
     let _ = ExportPdfEvent::CreateEnd {
         uuid: event_uuid,
-        chapter_export_dir,
+        // Never expose the temporary folder in the progress UI.
+        chapter_export_dir: if merge {
+            comic_export_dir.clone()
+        } else {
+            chapter_export_dir
+        },
     }
     .emit(app);
+    if !merge {
+        return Ok(chapter_paths);
+    }
 
     let event_uuid = uuid::Uuid::new_v4().to_string();
-    // 发送开始合并pdf事件
     let _ = ExportPdfEvent::MergeStart {
         uuid: event_uuid.clone(),
         comic_title: comic.name.clone(),
     }
     .emit(app);
-    // 如果success为false，drop时发送MergeError事件
-    let mut merge_error_event_guard = PdfMergeErrorEventGuard {
+    let mut merge_guard = PdfMergeErrorEventGuard {
         uuid: event_uuid.clone(),
         app: app.clone(),
         success: false,
     };
-
-    let comic_download_dir_name = &comic
-        .get_comic_download_dir_name()
-        .context("获取漫画下载目录名失败")?;
-    let save_path = comic_export_dir.join(format!("{comic_download_dir_name}.{extension}"));
-    merge_pdf(chapter_pdf_paths, &save_path).context("合并pdf失败")?;
-    // 标记为成功，后面drop时就不会发送MergeError事件
-    merge_error_event_guard.success = true;
-    // 发送合并pdf完成事件
+    let filename = if chapter_ids.is_none() {
+        format!("{}.pdf", comic.get_comic_download_dir_name()?)
+    } else {
+        // A bounded, deterministic name avoids path-length limits and collisions between
+        // selections with the same first/last chapter but different middle chapters.
+        let ids = chapters
+            .iter()
+            .map(|chapter| chapter.chapter_id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("选章-{}章-{:x}.pdf", chapters.len(), md5::compute(ids))
+    };
+    let output_dir = if chapter_ids.is_none() {
+        comic_export_dir
+    } else {
+        comic_export_dir.join("pdf")
+    };
+    std::fs::create_dir_all(&output_dir)?;
+    let save_path = output_dir.join(filename);
+    merge_pdf(chapter_paths, &save_path).context("合并 PDF 失败")?;
+    merge_guard.success = true;
     let _ = ExportPdfEvent::MergeEnd {
         uuid: event_uuid,
-        chapter_export_dir: save_path,
+        chapter_export_dir: save_path.clone(),
     }
     .emit(app);
-    Ok(())
+    Ok(vec![save_path])
 }
 
 /// 用`image_paths`中的图片按顺序创建PDF，保存到`save_path`中
@@ -750,6 +783,55 @@ mod tests {
             image.save(&path).unwrap();
         }
         path
+    }
+
+    fn fixture_chapter(root: &Path, id: i64, width: u32) -> ChapterInfo {
+        let directory = root.join(format!("chapter-{id}"));
+        std::fs::create_dir(&directory).unwrap();
+        make_image(&directory, "0001.png", width);
+        ChapterInfo {
+            chapter_id: id,
+            chapter_title: format!("Chapter {id}"),
+            order: id,
+            page_count: Some(1),
+            is_downloaded: Some(true),
+            chapter_download_dir: Some(directory),
+        }
+    }
+
+    #[test]
+    fn selection_renders_only_requested_chapter_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = fixture_chapter(temp.path(), 1, 32);
+        let _unselected = fixture_chapter(temp.path(), 2, 48);
+        let third = fixture_chapter(temp.path(), 3, 64);
+        let output = temp.path().join("pdf");
+        let mut progress = Vec::new();
+        let paths =
+            render_chapters(&[&first, &third], &output, |count| progress.push(count)).unwrap();
+        assert_eq!(progress, vec![1, 2]);
+        assert_eq!(std::fs::read_dir(&output).unwrap().count(), 2);
+        assert!(!output.join("chapter-2.pdf").exists());
+        for path in paths {
+            assert_eq!(Document::load(path).unwrap().get_pages().len(), 1);
+        }
+    }
+
+    #[test]
+    fn merging_selection_keeps_only_combined_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = fixture_chapter(temp.path(), 1, 32);
+        let second = fixture_chapter(temp.path(), 2, 64);
+        let output = temp.path().join("exports");
+        std::fs::create_dir(&output).unwrap();
+        let final_path = output.join("selection.pdf");
+        {
+            let staging = tempfile::tempdir_in(&output).unwrap();
+            let paths = render_chapters(&[&first, &second], staging.path(), |_| {}).unwrap();
+            merge_pdf(paths, &final_path).unwrap();
+        }
+        assert_eq!(std::fs::read_dir(&output).unwrap().count(), 1);
+        assert_eq!(Document::load(final_path).unwrap().get_pages().len(), 2);
     }
 
     #[test]

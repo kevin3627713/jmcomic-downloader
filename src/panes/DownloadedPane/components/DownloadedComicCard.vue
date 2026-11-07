@@ -15,13 +15,14 @@ import {
 import { useStore } from '../../../store'
 import { useIsMobile } from '../../../composables/useIsMobile'
 import { useComicExport } from '../../../composables/useComicExport'
+import PdfSelectionSheet from '../../../components/PdfSelectionSheet.vue'
 import { useLibraryRemoval } from '../../../composables/useLibraryRemoval'
 
 const store = useStore()
 defineOptions({ inheritAttrs: false })
 const message = useMessage()
 const isMobile = useIsMobile()
-const { exportComic, openPdf, shareCbz } = useComicExport()
+const { exportComic, shareCbz } = useComicExport()
 const { removeComicState } = useLibraryRemoval()
 const props = defineProps<{
   comic: Comic
@@ -35,6 +36,13 @@ const files = ref<ComicFileStatus>({ pdfCount: 0, cbzCount: 0, hasPdf: false })
 const loadingFiles = ref(true)
 const fileError = ref('')
 const menuShowing = ref(false)
+const pdfShowing = ref(false)
+const pdfAction = ref<'read' | 'export'>('read')
+function showPdf(action: 'read' | 'export' = 'read') {
+  menuShowing.value = false
+  pdfAction.value = action
+  pdfShowing.value = true
+}
 const confirmShowing = ref(false)
 const deleteKind = ref<DeleteKind>('all')
 const deleting = ref(false)
@@ -79,15 +87,16 @@ async function openDirectory() {
 }
 async function exportFormat(format: 'pdf' | 'cbz') {
   menuShowing.value = false
-  await exportComic(props.comic, format, true)
+  if (format === 'pdf') showPdf('export')
+  else await exportComic(props.comic, format, true)
 }
 function previewPdf() {
   menuShowing.value = false
-  void openPdf(props.comic)
+  showPdf('read')
 }
 function sharePdf() {
   menuShowing.value = false
-  void openPdf(props.comic, false)
+  showPdf('export')
 }
 function openCbz() {
   menuShowing.value = false
@@ -188,10 +197,11 @@ async function confirmDelete() {
     <div class="library-card-actions">
       <button
         class="library-action library-action-primary"
+        aria-label="阅读或导出 PDF"
         :disabled="busy || loadingFiles"
-        @click="files.hasPdf ? openPdf(comic) : exportFormat('pdf')">
+        @click="showPdf('read')">
         <PhFilePdf :size="17" />
-        {{ files.hasPdf ? '查看 PDF' : '导出 PDF' }}
+        阅读 / 导出
       </button>
       <button
         class="library-action"
@@ -207,6 +217,7 @@ async function confirmDelete() {
     <p v-if="exporting" class="library-busy-note">正在导出…</p>
   </article>
 
+  <PdfSelectionSheet v-model:show="pdfShowing" :comic="comic" :initial-action="pdfAction" @changed="refreshFiles" />
   <n-modal v-model:show="menuShowing">
     <section class="library-sheet" role="dialog" aria-modal="true" :aria-label="`${comic.name}的文件操作`">
       <header class="library-sheet-header">
@@ -217,13 +228,13 @@ async function confirmDelete() {
         <button class="library-more" aria-label="关闭文件操作" @click="menuShowing = false"><PhX :size="20" /></button>
       </header>
       <div class="library-sheet-body">
-        <button v-if="files.hasPdf" class="library-menu-item" @click="previewPdf">
+        <button class="library-menu-item" @click="previewPdf">
           <PhFilePdf :size="20" />
-          <span>查看 PDF</span>
+          <span>选择章节阅读</span>
         </button>
-        <button v-if="store.runtimePlatform === 'ios' && files.hasPdf" class="library-menu-item" @click="sharePdf">
+        <button v-if="store.runtimePlatform === 'ios'" class="library-menu-item" @click="sharePdf">
           <PhShareNetwork :size="20" />
-          <span>分享 PDF</span>
+          <span>选择 PDF 导出 / 分享</span>
         </button>
         <button v-if="store.runtimePlatform === 'ios' && files.cbzCount" class="library-menu-item" @click="openCbz">
           <PhShareNetwork :size="20" />
@@ -231,7 +242,7 @@ async function confirmDelete() {
         </button>
         <button class="library-menu-item" :disabled="busy" @click="exportFormat('pdf')">
           <PhDownloadSimple :size="20" />
-          <span>{{ files.hasPdf ? '重新导出 PDF' : '导出 PDF' }}</span>
+          <span>选择范围导出 PDF</span>
         </button>
         <button class="library-menu-item" :disabled="busy" @click="exportFormat('cbz')">
           <PhDownloadSimple :size="20" />

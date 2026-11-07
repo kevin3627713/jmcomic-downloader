@@ -701,6 +701,28 @@ pub fn export_pdf(app: AppHandle, comic: Comic) -> CommandResult<()> {
     Ok(())
 }
 
+/// Export only the requested output files. A null chapter list means the complete book.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn export_pdf_selection(
+    app: AppHandle,
+    comic: Comic,
+    chapter_ids: Option<Vec<i64>>,
+    merge: bool,
+) -> CommandResult<Vec<String>> {
+    let _file_lease = crate::comic_files::read(comic.id)
+        .map_err(|err| CommandError::from("导出 PDF 失败", err))?;
+    let comic = get_synced_comic(app.clone(), comic)?;
+    export::pdf_selection(&app, &comic, chapter_ids.as_deref(), merge)
+        .map(|paths| {
+            paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect()
+        })
+        .map_err(|err| CommandError::from("导出 PDF 失败", err))
+}
+
 #[tauri::command(async)]
 #[specta::specta]
 #[allow(clippy::needless_pass_by_value)]
